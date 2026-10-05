@@ -24,9 +24,16 @@ const MULTI_ROOM_RISK = new Set(["trivago", "xotelo"]);
  */
 export function roomCapacity(room: string): number | null {
   const name = room.toLowerCase();
-  // "Four Bedroom" names a unit's size, not how many it sleeps; dormitory beds are sold per bed.
-  if (/\b(dorm|dormitory|bunk|bed in|bedrooms?|bhk)\b/.test(name)) return null;
-  const n = name.match(/\b(\d)[\s-]*(bed|bedded|person|persons|pax|people|guest|guests|sharing)\b/);
+  // Dormitory beds are sold per bed, and a multi-bedroom unit is several rooms: neither says how many one
+  // room sleeps. A "1 Bedroom" note doesn't hide the room's own capacity ("Family Quadruple Room, 1 Bedroom").
+  if (/\b(dorm|dormitory|bunk|bed in)\b/.test(name) || bedroomCount(name) > 1) return null;
+  const withoutBedrooms = name.replace(/\b(\d+|one|single)[\s-]*(bedrooms?|bhk)\b/g, " ");
+  // "2 Adults + 2 Children" sleeps four.
+  const party = withoutBedrooms.match(/\b(\d)\s*adults?\b.*?\b(\d)\s*(child|children|kids?)\b/);
+  if (party) return Number(party[1]) + Number(party[2]);
+  const n = withoutBedrooms.match(
+    /\b(\d)[\s-]*(bed|bedded|person|persons|pax|people|guest|guests|adult|adults|sharing)\b/,
+  );
   if (n) return Number(n[1]);
   const words: [RegExp, number][] = [
     [/\b(2|two)\s*(double|queen|king)\s*beds?\b/, 4],
@@ -34,8 +41,25 @@ export function roomCapacity(room: string): number | null {
     [/\bfamily\b/, 4],
     [/\b(triple|three)\b/, 3],
   ];
-  for (const [re, cap] of words) if (re.test(name)) return cap;
+  for (const [re, cap] of words) if (re.test(withoutBedrooms)) return cap;
   return null;
+}
+
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1,
+  single: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+};
+
+/** Bedrooms a unit name declares ("Two Bedroom Apartment", "3BHK", "2-Bedroom Villa"); 0 when it doesn't say. */
+export function bedroomCount(room: string): number {
+  const m = room.toLowerCase().match(/\b(\d+|one|single|two|three|four|five|six)[\s-]*(bedrooms?|bhk)\b/);
+  if (!m) return 0;
+  return /^\d+$/.test(m[1]!) ? Number(m[1]) : (NUMBER_WORDS[m[1]!] ?? 0);
 }
 
 export function occupancyLabel(q: PriceQuote, guests: number): OccupancyLabel {
@@ -48,6 +72,14 @@ export function occupancyLabel(q: PriceQuote, guests: number): OccupancyLabel {
     return {
       occupancy: "unverified",
       occupancy_note: `${q.source} sometimes prices ${guests} guests as two rooms under a one-room request; get_hotel_rates with check_single_room compares it with the two-adult price.`,
+    };
+  }
+  // A whole multi-bedroom unit (apartment, villa) is several rooms, whatever the source.
+  const bedrooms = q.room ? bedroomCount(q.room) : 0;
+  if (bedrooms > 1) {
+    return {
+      occupancy: "unverified",
+      occupancy_note: `"${q.room}" is a whole ${bedrooms}-bedroom unit, not a single room.`,
     };
   }
   if (q.source === "hotelscasa") {

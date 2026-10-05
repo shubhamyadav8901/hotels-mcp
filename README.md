@@ -142,6 +142,13 @@ HotelsCasa return their cheapest results rather than their most relevant ones. `
 `max_price_inr`) is also applied by those sources on their own price basis, before results are merged. A town or city name (`place:
 "Jaipur"`) searches the town, not its main station.
 
+Coverage: no source returns every hotel. trivago returns ~25 hotels around a point (no radius control), so wider
+searches (over 3 km) query up to 13 points across the circle; HotelsCasa returns pages of 10 (up to 5 pages for
+wide searches); Google Hotels returns ~20 per page (`SERPAPI_MAX_PAGES`, default 1, one SerpApi search each);
+Xotelo prices only the 5 nearest of the hotels it lists. `search_hotels` returns a `coverage` entry per source
+(hotels returned, priced, furthest km, and what limited it), so results are not mistaken for every hotel in the
+radius.
+
 Guest-rating floor: `min_rating_pct` (e.g. 60 = 6.0/10 = 3.0/5). Its default comes from the server setting
 `DEFAULT_MIN_RATING_PCT` (0, i.e. off, unless you set it) and shows in the tool schema, so an agent can override
 it per request ("at least 80%" → `80`, "include unrated hotels" → `0`). While it is on, hotels no source rates

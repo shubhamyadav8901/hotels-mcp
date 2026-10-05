@@ -1,6 +1,6 @@
 import { convertToInr, FX_INFO, type FxRates } from "../providers/fx.js";
 import type { ProviderRegistry } from "../providers/registry.js";
-import type { HotelSearchProvider } from "../providers/types.js";
+import type { HotelSearchProvider, SearchOutcome } from "../providers/types.js";
 import { toAppError } from "./errors.js";
 import { haversineKm, roundTo } from "./geo.js";
 import { cheapest, mergeCandidates, type MergedHotel } from "./merge.js";
@@ -41,7 +41,19 @@ export interface HotelSearchResult {
   unrated_hidden: number;
   sources_ok: string[];
   sources_failed: SourceFailure[];
+  /** What each answering source contributed, and what limited it (sources return limited pages). */
+  coverage: SourceCoverage[];
   fx: { date: string; source: string } | null;
+}
+
+export interface SourceCoverage {
+  source: string;
+  /** Hotels it returned within the radius, and how many of those it priced. */
+  hotels: number;
+  priced: number;
+  /** Furthest of its hotels from the search point (km); shows when a source only covers the centre. */
+  max_km: number | null;
+  note: string | null;
 }
 
 export interface HotelSearchDeps {
@@ -60,17 +72,33 @@ export async function searchHotels(
 ): Promise<HotelSearchResult> {
   const active = deps.providers.filter((p) => deps.registry.isEnabled(p.info.id));
   const settled = await Promise.allSettled(
-    active.map((p) => deps.registry.run(p.info.id, () => p.search(q), deps.deadlineMs)),
+    active.map((p) =>
+      deps.registry.run(
+        p.info.id,
+        async (): Promise<SearchOutcome | { hotels: HotelCandidate[]; coverage_note: null }> =>
+          p.searchWithCoverage ? p.searchWithCoverage(q) : { hotels: await p.search(q), coverage_note: null },
+        deps.deadlineMs,
+      ),
+    ),
   );
 
   const candidates: HotelCandidate[] = [];
   const sources_ok: string[] = [];
   const sources_failed: SourceFailure[] = [];
+  const coverage: SourceCoverage[] = [];
   settled.forEach((r, i) => {
     const id = active[i]!.info.id;
     if (r.status === "fulfilled") {
       sources_ok.push(id);
-      candidates.push(...r.value);
+      candidates.push(...r.value.hotels);
+      const inside = r.value.hotels.map((h) => haversineKm(q, h)).filter((km) => km <= q.radius_km);
+      coverage.push({
+        source: id,
+        hotels: inside.length,
+        priced: r.value.hotels.filter((h) => h.prices.length > 0 && haversineKm(q, h) <= q.radius_km).length,
+        max_km: inside.length ? roundTo(Math.max(...inside), 1) : null,
+        note: r.value.coverage_note,
+      });
     } else {
       const e = toAppError(r.reason);
       sources_failed.push({ source: id, code: e.code, message: e.message });
@@ -125,6 +153,7 @@ export async function searchHotels(
     unrated_hidden,
     sources_ok,
     sources_failed,
+    coverage,
     fx: fx ? { date: fx.date, source: fx.source } : null,
   };
 }

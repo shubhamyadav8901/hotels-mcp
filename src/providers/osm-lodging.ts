@@ -19,7 +19,7 @@ export const OSM_LODGING_INFO: ProviderInfo = {
 export function createOsmLodging(rows: LodgingRow[], builtAt: string | null): HotelSearchProvider {
   const index = new GridIndex(rows);
   const fetchedAt = builtAt ?? "unknown";
-  return {
+  const provider: HotelSearchProvider = {
     info: OSM_LODGING_INFO,
     async search(q: HotelSearchQuery): Promise<HotelCandidate[]> {
       return index.within(q, q.radius_km).map(({ item }) => ({
@@ -36,5 +36,12 @@ export function createOsmLodging(rows: LodgingRow[], builtAt: string | null): Ho
         fetched_at: fetchedAt,
       }));
     },
+    async searchWithCoverage(q) {
+      return {
+        hotels: await provider.search(q),
+        coverage_note: "every mapped listing in the radius; locations only, no prices",
+      };
+    },
   };
+  return provider;
 }

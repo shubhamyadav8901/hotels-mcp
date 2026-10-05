@@ -5,7 +5,7 @@ import type { HotelCandidate, HotelSearchQuery, PriceQuote } from "../core/types
 import { TtlCache } from "../lib/cache.js";
 import { getJson, type HttpOptions } from "../lib/http.js";
 import { parseUpstream } from "./shared.js";
-import type { HotelSearchProvider, ProviderInfo } from "./types.js";
+import type { HotelSearchProvider, ProviderInfo, SearchOutcome } from "./types.js";
 
 export const SERPAPI_URL = "https://serpapi.com/search.json";
 const GOOGLE_LOWEST = "Google Hotels (lowest listed)";
@@ -65,6 +65,7 @@ const Payload = z.object({
   search_metadata: z.object({ status: z.string().nullish() }).nullish(),
   error: z.string().nullish(),
   properties: z.array(Property).nullish(),
+  serpapi_pagination: z.object({ next_page_token: z.string().nullish() }).nullish(),
 });
 
 type Prop = z.infer<typeof Property>;
@@ -75,6 +76,8 @@ export interface SerpApiOptions {
   /** Epoch ms clock; used for the cache, the monthly quota window and fetched_at. */
   now?: () => number;
   monthlyQuota?: number;
+  /** Google Hotels pages (~20 hotels each) per area search; every page is one search against the quota. */
+  maxPages?: number;
   baseUrl?: string;
 }
 
@@ -113,9 +116,9 @@ export function serpApiUrl(q: HotelSearchQuery, apiKey: string, baseUrl = SERPAP
 }
 
 export function createSerpApi(opts: SerpApiOptions) {
-  const { apiKey, now = Date.now, monthlyQuota = 250, baseUrl = SERPAPI_URL } = opts;
+  const { apiKey, now = Date.now, monthlyQuota = 250, maxPages = 1, baseUrl = SERPAPI_URL } = opts;
   const http: HttpOptions = { ...opts.http, timeoutMs: opts.http.timeoutMs ?? TIMEOUT_MS };
-  const cache = new TtlCache<{ props: Prop[]; fetchedAt: string }>(500, now);
+  const cache = new TtlCache<{ props: Prop[]; fetchedAt: string; next: string | null }>(500, now);
   let month = "";
   let used = 0;
 
@@ -128,9 +131,12 @@ export function createSerpApi(opts: SerpApiOptions) {
     return Math.max(0, monthlyQuota - used);
   }
 
-  async function fetchProps(q: HotelSearchQuery): Promise<{ props: Prop[]; fetchedAt: string }> {
+  type Page = { props: Prop[]; fetchedAt: string; next: string | null };
+
+  async function fetchPage(q: HotelSearchQuery, token: string | null): Promise<Page> {
+    const withToken = (url: string) => (token ? `${url}&next_page_token=${encodeURIComponent(token)}` : url);
     // Everything that changes the request changes the cache key (the URL without the key).
-    const key = serpApiUrl(q, "-");
+    const key = withToken(serpApiUrl(q, "-"));
     return cache.getOrSet(key, CACHE_TTL_MS, async () => {
       if (quotaRemaining() <= 0) {
         throw new AppError(
@@ -140,22 +146,56 @@ export function createSerpApi(opts: SerpApiOptions) {
         );
       }
       used++;
-      const payload = parseUpstream("serpapi", Payload, await getJson(serpApiUrl(q, apiKey, baseUrl), http));
+      const payload = parseUpstream(
+        "serpapi",
+        Payload,
+        await getJson(withToken(serpApiUrl(q, apiKey, baseUrl)), http),
+      );
       const fetchedAt = new Date(now()).toISOString();
       if (payload.error) {
         // "hasn't returned any results" is a valid empty answer, not a failure.
-        if (/hasn't returned any results|no results/i.test(payload.error)) return { props: [], fetchedAt };
+        if (/hasn't returned any results|no results/i.test(payload.error))
+          return { props: [], fetchedAt, next: null };
         if (/run out of searches|plan.*limit/i.test(payload.error)) {
           used = monthlyQuota;
           throw new AppError("QUOTA_EXHAUSTED", `SerpApi: ${upstreamText(payload.error)}`);
         }
         throw new AppError("UPSTREAM_UNAVAILABLE", `SerpApi: ${upstreamText(payload.error)}`);
       }
-      return { props: payload.properties ?? [], fetchedAt };
+      return {
+        props: payload.properties ?? [],
+        fetchedAt,
+        next: payload.serpapi_pagination?.next_page_token ?? null,
+      };
     });
   }
 
-  async function search(q: HotelSearchQuery): Promise<HotelCandidate[]> {
+  /** Up to maxPages pages for an area search (one for a single-hotel lookup); a later page failing keeps the earlier ones. */
+  async function fetchProps(
+    q: HotelSearchQuery,
+  ): Promise<{ props: Prop[]; fetchedAt: string; pages: number; more: boolean; pageFailed: boolean }> {
+    const limit = q.hotel_name ? 1 : maxPages;
+    const first = await fetchPage(q, null);
+    const props = [...first.props];
+    let next = first.next;
+    let pages = 1;
+    let pageFailed = false;
+    while (next && pages < limit) {
+      try {
+        const page = await fetchPage(q, next);
+        props.push(...page.props);
+        next = page.next;
+        pages++;
+      } catch {
+        // e.g. a page token from a cached first page that has since expired upstream.
+        pageFailed = true;
+        break;
+      }
+    }
+    return { props, fetchedAt: first.fetchedAt, pages, more: Boolean(next) && !q.hotel_name, pageFailed };
+  }
+
+  async function searchWithCoverage(q: HotelSearchQuery): Promise<SearchOutcome> {
     if (!q.place && !q.hotel_name) {
       // Google Hotels ignores coordinates in a text query (it returned hotels 1,000+ km away in testing).
       throw new AppError(
@@ -164,8 +204,8 @@ export function createSerpApi(opts: SerpApiOptions) {
         "Search by station_code, iata or place to include Google Hotels prices.",
       );
     }
-    const { props, fetchedAt } = await fetchProps(q);
-    return props.flatMap((p): HotelCandidate[] => {
+    const { props, fetchedAt, pages, more, pageFailed } = await fetchProps(q);
+    const hotels = props.flatMap((p): HotelCandidate[] => {
       if (!p.gps_coordinates) return [];
       const at = { lat: p.gps_coordinates.latitude, lng: p.gps_coordinates.longitude };
       if (haversineKm(q, at) > q.radius_km) return [];
@@ -187,11 +227,23 @@ export function createSerpApi(opts: SerpApiOptions) {
         },
       ];
     });
+    const query = new URL(serpApiUrl(q, "-")).searchParams.get("q");
+    return {
+      hotels,
+      coverage_note:
+        `${pages} Google Hotels page${pages > 1 ? "s" : ""} (~20 each) for "${query}"` +
+        (pageFailed
+          ? `; fetching page ${pages + 1} failed`
+          : more
+            ? `; more pages exist (SERPAPI_MAX_PAGES, one search each)`
+            : ""),
+    };
   }
 
   const provider: HotelSearchProvider & { quotaRemaining: () => number } = {
     info: SERPAPI_INFO,
-    search,
+    search: async (q) => (await searchWithCoverage(q)).hotels,
+    searchWithCoverage,
     quotaRemaining,
   };
   return provider;

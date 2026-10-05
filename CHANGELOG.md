@@ -17,6 +17,8 @@ Planned as 0.2.0.
 ### Changed
 
 - **"Hotels in X" searches the town.** A place query that names a town or city exactly (e.g. `Jaipur`) resolves to the town rather than to its main station, and Google Hotels is asked for "hotels in Jaipur, Rajasthan".
+- **Wider coverage, reported.** trivago (≈25 hotels around one point, no radius control) is queried at up to 13 points across searches wider than 3 km; HotelsCasa fetches up to 5 pages for them; Google Hotels can fetch more pages (`SERPAPI_MAX_PAGES`, one SerpApi search each). `search_hotels` reports per-source `coverage`. Live, 10 km around Ernakulam Junction: 172 priced hotels instead of 46, with trivago reaching 9.7 km instead of 2.5 km.
+- **Room names:** whole multi-bedroom units ("2-Bedroom Apartment", "Two-Bedroom Villa") are flagged as not a single room; "Family Quadruple Room, 1 Bedroom" and "Family room for 4 adults" are read correctly.
 - **Xotelo under load.** Requests are still spaced 1.2 s apart for everyone sharing the server, but one whose turn is too far away is skipped at once (`RATE_LIMITED`, "Xotelo is busy") instead of queueing until the caller's deadline, and a search returns the hotels Xotelo priced in time. Concurrent identical requests share one call. With five agents at once this removed Xotelo timeouts; Xotelo simply contributes fewer prices when many cold searches run together.
 - **Faster Xotelo.** Its area lists are fetched concurrently (still rate-limited), roughly halving its time on a first search.
 

@@ -21,6 +21,8 @@ const ConfigSchema = z.object({
     .string()
     .default("india-hotels-mcp/0.1 (+https://github.com/shubhamyadav8901/hotels-mcp)"),
   SERPAPI_KEY: optionalString,
+  /** Google Hotels pages per area search (1–5, ~20 hotels each); every page costs one SerpApi search. */
+  SERPAPI_MAX_PAGES: z.coerce.number().int().min(1).max(5).default(1),
   PROVIDERS_DISABLED: csv,
   /** Unofficial sources (Xotelo, and SerpApi's Google Hotels scraper) run only when this is true. */
   ENABLE_UNOFFICIAL_SOURCES: z

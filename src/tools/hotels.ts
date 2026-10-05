@@ -62,6 +62,19 @@ const outputSchema = {
   hotels: z.array(HotelOut.extend({ drive_minutes: z.number().nullable() })),
   sources_ok: z.array(z.string()),
   sources_failed: z.array(z.object({ source: z.string(), code: z.string(), message: z.string() })),
+  coverage: z
+    .array(
+      z.object({
+        source: z.string(),
+        hotels: z.number(),
+        priced: z.number(),
+        max_km: z.number().nullable(),
+        note: z.string().nullable(),
+      }),
+    )
+    .describe(
+      "What each source returned within the radius and what limited it; sources return limited pages.",
+    ),
   notes: z.array(z.string()),
 };
 
@@ -123,7 +136,8 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         "price is unverified, cheapest_single_room gives the cheapest that is not. With " +
         "max_drive_minutes, keeps only hotels within that drive time (OpenStreetMap routing with a traffic " +
         "allowance) and adds drive_minutes. Results are paginated. Per-seller prices are in get_hotel_rates; " +
-        "times to other places are in compare_hotels. Does not book.",
+        "times to other places are in compare_hotels. coverage reports what each source returned and what limited it " +
+        "(sources return limited pages, so the list is not exhaustive). Does not book.",
       inputSchema: {
         ...pointFields,
         radius_km: z.number().min(0.2).max(25).default(3).describe("Search radius in km."),
@@ -205,6 +219,7 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         include_unpriced: true,
       });
       const notes = [
+        "Each source returns a limited set (see coverage), so this is not every hotel in the radius; hotels a source did not return are missing, not unavailable.",
         "distance_km is straight-line distance from the place.",
         "Prices are per night as listed by each source; meta-search prices may exclude GST (includes_taxes=null means unknown).",
         occupancyNote(a.adults, a.children_ages),
@@ -301,6 +316,7 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         hotels: page.map((h) => ({ ...hotelOut(h), drive_minutes: h.drive_minutes })),
         sources_ok: r.sources_ok,
         sources_failed,
+        coverage: r.coverage,
         notes,
       };
     }),

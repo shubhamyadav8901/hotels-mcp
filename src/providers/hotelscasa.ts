@@ -2,7 +2,7 @@ import { z } from "zod";
 import { AppError } from "../core/errors.js";
 import type { HotelCandidate, HotelSearchQuery } from "../core/types.js";
 import { parseUpstream } from "./shared.js";
-import type { HotelSearchProvider, ProviderInfo } from "./types.js";
+import type { HotelSearchProvider, ProviderInfo, SearchOutcome } from "./types.js";
 import type { CallUpstream } from "./upstream-mcp.js";
 
 export const HOTELSCASA_URL = "https://mcp.hotelscasa.com/mcp";
@@ -51,41 +51,80 @@ const Payload = z.object({
 
 export function createHotelsCasaProvider(
   call: CallUpstream,
-  opts: { maxPages?: number; now?: () => Date } = {},
+  opts: { maxPages?: number; widePages?: number; now?: () => Date } = {},
 ): HotelSearchProvider {
-  const { maxPages = 2, now = () => new Date() } = opts;
+  // Up to 10 hotels per page and at most 5 pages; wide searches (over 3 km) fetch more pages.
+  const { maxPages = 2, widePages = 5, now = () => new Date() } = opts;
+
+  async function page(q: HotelSearchQuery, n: number) {
+    const result = await call("search_hotels", {
+      lat: q.lat,
+      lng: q.lng,
+      radius_km: Math.min(q.radius_km, MAX_RADIUS_KM),
+      check_in: q.check_in,
+      check_out: q.check_out,
+      adults: q.adults,
+      ...(q.children_ages?.length
+        ? { children: q.children_ages.length, children_ages: q.children_ages.join(",") }
+        : {}),
+      ...(q.prefer?.min_stars ? { stars_min: q.prefer.min_stars } : {}),
+      lang: "en",
+      sort: q.prefer?.sort === "price" ? "price" : q.prefer?.sort === "rating" ? "rating" : "recommended",
+      limit: PAGE_SIZE,
+      page: n,
+    });
+    if (result.isError) {
+      throw new AppError("UPSTREAM_UNAVAILABLE", "HotelsCasa reported an error for this search");
+    }
+    const payload = parseUpstream("hotelscasa", Payload, result.structuredContent);
+    const fetchedAt = now().toISOString();
+    const live = payload.availability_checked === true;
+    return {
+      hotels: payload.items.map((it) => toCandidate(it, live, fetchedAt)),
+      more: Boolean(payload.next_page) && payload.items.length >= PAGE_SIZE,
+    };
+  }
+
+  async function searchWithCoverage(q: HotelSearchQuery): Promise<SearchOutcome> {
+    const pages = q.radius_km > 3 ? widePages : maxPages;
+    // Page 1 says whether there are more; the rest are fetched together.
+    const first = await page(q, 1);
+    // A later page failing keeps the pages that answered.
+    const rest =
+      first.more && pages > 1
+        ? await Promise.allSettled(Array.from({ length: pages - 1 }, (_, i) => page(q, i + 2)))
+        : [];
+    const hotels = [...first.hotels];
+    let fetched = 1;
+    let missing = 0;
+    let lastMore = first.more;
+    for (const r of rest) {
+      if (r.status === "rejected") {
+        missing++;
+        continue;
+      }
+      hotels.push(...r.value.hotels);
+      fetched++;
+      lastMore = r.value.more;
+      if (!r.value.more) break;
+    }
+    const order =
+      q.prefer?.sort === "price"
+        ? "cheapest first"
+        : q.prefer?.sort === "rating"
+          ? "best rated first"
+          : "its own ranking";
+    const capped = fetched === pages && lastMore;
+    return {
+      hotels,
+      coverage_note: `${fetched} page${fetched > 1 ? "s" : ""} of up to ${PAGE_SIZE} (${order})${capped ? `; more exist beyond ${pages * PAGE_SIZE}` : ""}${missing ? `; ${missing} page${missing > 1 ? "s" : ""} failed` : ""}`,
+    };
+  }
+
   return {
     info: HOTELSCASA_INFO,
-    async search(q: HotelSearchQuery): Promise<HotelCandidate[]> {
-      const out: HotelCandidate[] = [];
-      for (let page = 1; page <= maxPages; page++) {
-        const result = await call("search_hotels", {
-          lat: q.lat,
-          lng: q.lng,
-          radius_km: Math.min(q.radius_km, MAX_RADIUS_KM),
-          check_in: q.check_in,
-          check_out: q.check_out,
-          adults: q.adults,
-          ...(q.children_ages?.length
-            ? { children: q.children_ages.length, children_ages: q.children_ages.join(",") }
-            : {}),
-          ...(q.prefer?.min_stars ? { stars_min: q.prefer.min_stars } : {}),
-          lang: "en",
-          sort: q.prefer?.sort === "price" ? "price" : q.prefer?.sort === "rating" ? "rating" : "recommended",
-          limit: PAGE_SIZE,
-          page,
-        });
-        if (result.isError) {
-          throw new AppError("UPSTREAM_UNAVAILABLE", "HotelsCasa reported an error for this search");
-        }
-        const payload = parseUpstream("hotelscasa", Payload, result.structuredContent);
-        const fetchedAt = now().toISOString();
-        const live = payload.availability_checked === true;
-        for (const it of payload.items) out.push(toCandidate(it, live, fetchedAt));
-        if (!payload.next_page || payload.items.length < PAGE_SIZE) break;
-      }
-      return out;
-    },
+    search: async (q) => (await searchWithCoverage(q)).hotels,
+    searchWithCoverage,
   };
 }
 

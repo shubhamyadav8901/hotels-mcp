@@ -368,8 +368,8 @@ describe("single-room check failures", () => {
 describe("agent-test fixes", () => {
   it("does not read 'N Bedroom' as how many a room sleeps", () => {
     const label = (room: string) => occupancyLabel(quote("hotelscasa", 1, { room }), 4).occupancy;
-    expect(label("Four Bedroom, Room Only")).toBe("likely");
-    expect(label("Five Bedroom Standard")).toBe("likely");
+    expect(label("Four Bedroom, Room Only")).toBe("unverified");
+    expect(label("Five Bedroom Standard")).toBe("unverified");
     expect(label("Deluxe Four Bed AC")).toBe("confirmed");
   });
 
@@ -718,5 +718,42 @@ describe("get_hotel_rates timing", () => {
       verdict: "looks_like_2_rooms",
       two_adult_per_night_inr: 1900,
     });
+  });
+});
+
+describe("room labels from live Ernakulam results", () => {
+  const label = (room: string) => occupancyLabel(quote("hotelscasa", 1, { room }), 4);
+  it("reads a room's own capacity even when it also says '1 Bedroom'", () => {
+    expect(label("Family Quadruple Room, 1 Bedroom, Private Bathroom, Room Only").occupancy).toBe(
+      "confirmed",
+    );
+  });
+  it.each([
+    "Interconnecting 2-Bedroom Apartment, Room Only",
+    "Two Bedroom Apartment, Room Only",
+    "Two-Bedroom Villa, Room Only",
+    "3BHK Apartment",
+  ])("flags %s as a multi-room unit, not a single room", (room) => {
+    expect(label(room)).toMatchObject({
+      occupancy: "unverified",
+      occupancy_note: expect.stringMatching(/not a single room/),
+    });
+  });
+  it("reads 'for N adults' as the room's capacity", () => {
+    expect(label("Standard Triple Room for 3 Adults, Room Only")).toMatchObject({
+      occupancy: "likely",
+      occupancy_note: expect.stringMatching(/sleeps 3/),
+    });
+    expect(label("Family room for 4 adults, Room Only").occupancy).toBe("confirmed");
+  });
+
+  it("adds adults and children named in a room ('2 Adults + 2 Children' sleeps 4)", () => {
+    expect(label("Family Room, 2 Adults + 2 Children, Room Only").occupancy).toBe("confirmed");
+  });
+
+  it("still treats one-room names normally", () => {
+    expect(label("Deluxe Quadruple Room, Room Only").occupancy).toBe("confirmed");
+    expect(label("Suite with Balcony, Room Only").occupancy).toBe("likely");
+    expect(label("Four Bedroom, Room Only").occupancy).toBe("unverified");
   });
 });

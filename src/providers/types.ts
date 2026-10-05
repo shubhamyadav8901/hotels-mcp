@@ -35,8 +35,16 @@ export interface SnapshotInfo {
   licence: string;
 }
 
+/** A search's hotels plus a short note on what limited the search (pages fetched, points searched…). */
+export interface SearchOutcome {
+  hotels: HotelCandidate[];
+  coverage_note: string;
+}
+
 /** A source of hotels (and usually live prices) around a point. */
 export interface HotelSearchProvider {
   info: ProviderInfo;
   search(query: HotelSearchQuery): Promise<HotelCandidate[]>;
+  /** Same search, plus a note on what limited it; used for the coverage report when a provider offers it. */
+  searchWithCoverage?(query: HotelSearchQuery): Promise<SearchOutcome>;
 }

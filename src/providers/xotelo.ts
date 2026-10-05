@@ -9,7 +9,7 @@ import { DEFAULT_DATA_DIR } from "../data/datasets.js";
 import { TtlCache } from "../lib/cache.js";
 import { getJson, type HttpOptions } from "../lib/http.js";
 import { parseUpstream } from "./shared.js";
-import type { HotelSearchProvider, ProviderInfo } from "./types.js";
+import type { HotelSearchProvider, ProviderInfo, SearchOutcome } from "./types.js";
 
 export const XOTELO_BASE_URL = "https://data.xotelo.com/api";
 const TIMEOUT_MS = 15_000;
@@ -355,9 +355,9 @@ export function createXotelo(opts: XoteloOptions) {
     return toQuotes(rows, new Date(now()).toISOString());
   }
 
-  async function search(q: HotelSearchQuery): Promise<HotelCandidate[]> {
+  async function searchWithCoverage(q: HotelSearchQuery): Promise<SearchOutcome> {
     const chosen = pickXoteloKeys(keys, q, q.radius_km);
-    if (chosen.length === 0) return [];
+    if (chosen.length === 0) return { hotels: [], coverage_note: "no Xotelo location covers this area" };
     const latestStart = now() + searchBudgetMs;
 
     // Collect hotels within the radius from each key's first pages, deduped by TripAdvisor hotel id.
@@ -406,7 +406,13 @@ export function createXotelo(opts: XoteloOptions) {
       throw (failed[0] as PromiseRejectedResult).reason;
 
     const fetchedAt = new Date(now()).toISOString();
-    return hotels.map((h, i): HotelCandidate => {
+    const busy = failed.filter((r) => (r as PromiseRejectedResult).reason?.code === "RATE_LIMITED").length;
+    const pricedOk = priced.length - failed.length;
+    const coverage_note =
+      `${hotels.length} listed within the radius; prices fetched for the ${pricedOk} nearest` +
+      (busy ? ` (${busy} more skipped: Xotelo busy)` : "") +
+      ` — Xotelo is rate-limited, so only the ${ratesForNearest} nearest are priced`;
+    const candidates = hotels.map((h, i): HotelCandidate => {
       const r = rateResults[i];
       const rating = h.item.review_summary?.rating;
       const count = h.item.review_summary?.count;
@@ -425,9 +431,16 @@ export function createXotelo(opts: XoteloOptions) {
         fetched_at: fetchedAt,
       };
     });
+    return { hotels: candidates, coverage_note };
   }
 
-  const provider: HotelSearchProvider & { rates: typeof rates } = { info: XOTELO_INFO, search, rates };
+  const search = async (q: HotelSearchQuery) => (await searchWithCoverage(q)).hotels;
+  const provider: HotelSearchProvider & { rates: typeof rates } = {
+    info: XOTELO_INFO,
+    search,
+    searchWithCoverage,
+    rates,
+  };
   return provider;
 }
 

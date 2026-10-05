@@ -78,6 +78,9 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
   const fx = createFx(http);
   const trivago = createTrivagoProvider(
     new UpstreamMcpClient("trivago", TRIVAGO_URL, TRIVAGO_TOOLS, TRIVAGO_TIMEOUT_MS, ua).call,
+    undefined,
+    // Points answer in ~7–10 s; leave room within the per-source deadline to merge the ones that did.
+    Math.max(5_000, config.PROVIDER_DEADLINE_MS - 6_000),
   );
   const hotelscasa = createHotelsCasaProvider(
     new UpstreamMcpClient("hotelscasa", HOTELSCASA_URL, HOTELSCASA_TOOLS, HOTELSCASA_TIMEOUT_MS, ua).call,
@@ -100,7 +103,9 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
     // A search's requests must start early enough to finish (~6 s each) before its deadline.
     searchBudgetMs: Math.max(2_000, config.PROVIDER_DEADLINE_MS - 6_000),
   });
-  const serpapi = config.SERPAPI_KEY ? createSerpApi({ apiKey: config.SERPAPI_KEY, http }) : null;
+  const serpapi = config.SERPAPI_KEY
+    ? createSerpApi({ apiKey: config.SERPAPI_KEY, http, maxPages: config.SERPAPI_MAX_PAGES })
+    : null;
   // Priced sources first: when listings merge, the first source's id becomes the hotel_id.
   const hotelProviders: HotelSearchProvider[] = [
     trivago,
