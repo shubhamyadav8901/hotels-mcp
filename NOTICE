@@ -1,0 +1,29 @@
+India Hotels MCP Server
+Copyright 2026 The hotels-mcp contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Bundled data (see data/NOTICE, data/LICENSE and DISCLAIMER.md for details):
+- data/stations.json.gz, data/bus_stations.json.gz and data/lodging.json.gz are
+  derived from OpenStreetMap data, © OpenStreetMap contributors, and are
+  available under the Open Database License 1.0
+  (https://opendatacommons.org/licenses/odbl/1-0/).
+- data/airports.json.gz is derived from OurAirports
+  (https://ourairports.com/data/), released into the public domain.
+- data/retiring_rooms.json.gz is derived from IRCTC's public retiring-room
+  station list (station code, name and operator only), with coordinates from
+  the OpenStreetMap data above (ODbL 1.0).
+- data/xotelo_keys.json.gz holds location keys derived from Xotelo API
+  responses (https://xotelo.com).
+
+Data fetched at run time:
+- Geocoding results from Photon and Nominatim and routes from OSRM are based on
+  OpenStreetMap data, © OpenStreetMap contributors (ODbL 1.0).
+- Exchange rates are ECB reference rates served by Frankfurter.
+- Prices come from trivago, HotelsCasa, SerpApi (Google Hotels, optional) and,
+  only when unofficial sources are enabled, Xotelo; each price names its source
+  and seller.
+
+This project is not affiliated with or endorsed by trivago, HotelsCasa,
+TripAdvisor, Xotelo, Booking.com, Agoda, MakeMyTrip, IRCTC, Indian Railways,
+Google, SerpApi, OpenStreetMap or any other third-party service it can query.

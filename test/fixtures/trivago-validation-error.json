@@ -1,0 +1,28 @@
+{
+  "_fixture": "Shape of trivago validation error (no isError flag set). Captured 2026-10-05.",
+  "_request": {
+    "name": "trivago-accommodation-radius-search",
+    "arguments": {
+      "latitude": 28.643,
+      "longitude": 77.2194,
+      "arrival": "2026-09-10",
+      "departure": "2026-09-11",
+      "adults": 2
+    }
+  },
+  "content": [
+    {
+      "type": "text",
+      "text": "Validation errors: [{Message:arrival must be today or in the future (today: 2026-10-04, arrival: 2026-09-10) Argument:arrival Value:2026-09-10}]"
+    }
+  ],
+  "structuredContent": {
+    "validation_errors": [
+      {
+        "message": "arrival must be today or in the future (today: 2026-10-04, arrival: 2026-09-10)",
+        "argument": "arrival",
+        "value": "2026-09-10"
+      }
+    ]
+  }
+}

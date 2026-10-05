@@ -1,0 +1,35 @@
+services:
+  hotels-mcp:
+    build: .
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "3000"
+    restart: unless-stopped
+
+  # Optional self-hosted routing. Prepare the data first with scripts/osrm-setup.sh, then:
+  #   docker compose --profile osrm up -d
+  # and set OSRM_URL=http://osrm-car:5000 / OSRM_FOOT_URL=http://osrm-foot:5000 (inside compose)
+  # or http://localhost:5001 / http://localhost:5002 (from the host).
+  osrm-car:
+    image: ghcr.io/project-osrm/osrm-backend:v6.0.0
+    profiles: ["osrm"]
+    command: osrm-routed --algorithm mld --max-table-size 500 /data/car/region.osrm
+    volumes:
+      - ./osrm-data:/data:ro
+    ports:
+      - "127.0.0.1:5001:5000"
+    restart: unless-stopped
+
+  osrm-foot:
+    image: ghcr.io/project-osrm/osrm-backend:v6.0.0
+    profiles: ["osrm"]
+    command: osrm-routed --algorithm mld --max-table-size 500 /data/foot/region.osrm
+    volumes:
+      - ./osrm-data:/data:ro
+    ports:
+      - "127.0.0.1:5002:5000"
+    restart: unless-stopped

@@ -1,0 +1,110 @@
+{
+  "_fixture": "SYNTHETIC. Shape of CallToolResult from trivago-accommodation-radius-search (server v0.5.0, captured 2026-10-05). Hotel names/ids/prices invented; real response had 25 accommodations and 7 images (~646 KB base64).",
+  "_request": {
+    "name": "trivago-accommodation-radius-search",
+    "arguments": {
+      "latitude": 28.643,
+      "longitude": 77.2194,
+      "arrival": "2026-11-10",
+      "departure": "2026-11-11",
+      "adults": 2,
+      "rooms": 1,
+      "country": "IN",
+      "currency": "INR",
+      "language": "EN_IN"
+    }
+  },
+  "content": [
+    {
+      "type": "text",
+      "text": "\nIMPORTANT: Read the \"system_message\" field below carefully — it contains your formatting instructions. You MUST follow them exactly.\nThe hotel data is in the \"output\" field (JSON array). The formatting rules are in \"system_message\".\n\t\n{\n  \"output\": \"[\\n  {\\n    \\\"accommodation_id\\\": \\\"a1b2c3d4e5f6\\\",\\n    \\\"arrival\\\": \\\"2026-11-10\\\",\\n    \\\"departure\\\": \\\"2026-11-11\\\",\\n    \\\"accommodation_name\\\": \\\"Fixture Grand Paharganj\\\",\\n    \\\"currency\\\": \\\"INR\\\",\\n    \\\"price_per_night\\\": \\\"₹3,250\\\",\\n    \\\"price_per_stay\\\": \\\"₹3,250\\\",\\n    \\\"advertisers\\\": \\\"Booking.com\\\",\\n    \\\"hotel_rating\\\": 3,\\n    \\\"country_city\\\": \\\"Delhi, India\\\",\\n    \\\"review_rating\\\": \\\"8.1\\\",\\n    \\\"review_count\\\": \\\"1,204\\\",\\n    \\\"top_amenities\\\": \\\"WiFi in lobby, WiFi in rooms, A/C, Restaurant\\\",\\n    \\\"accommodation_url\\\": \\\"https://www.trivago.in/en-IN/lm/fixture-a1b2c3d4e5f6-delhi?cip=000000000&currencyCode=INR&search=100-0000000;dr-20261110-20261111;drs-40;rc-1-2&dealId=0000000000000000000\\\",\\n    \\\"latitude\\\": 28.6445,\\n    \\\"longitude\\\": 77.215,\\n    \\\"distance\\\": \\\"Delhi, 3.4 km to City centre\\\",\\n    \\\"main_image\\\": \\\"https://imgcy.trivago.com/c_fill,d_dummy.jpeg,e_sharpen:60,f_auto,h_534,q_40,w_800/partner-images/00/00/fixture-a1b2c3d4e5f6\\\"\\n  },\\n  {\\n    \\\"accommodation_id\\\": \\\"0f9e8d7c6b5a\\\",\\n    \\\"arrival\\\": \\\"2026-11-10\\\",\\n    \\\"departure\\\": \\\"2026-11-11\\\",\\n    \\\"accommodation_name\\\": \\\"Synthetic Residency Ajmeri Gate\\\",\\n    \\\"currency\\\": \\\"INR\\\",\\n    \\\"price_per_night\\\": \\\"₹2,100\\\",\\n    \\\"price_per_stay\\\": \\\"₹2,100\\\",\\n    \\\"advertisers\\\": \\\"Agoda\\\",\\n    \\\"hotel_rating\\\": 2,\\n    \\\"country_city\\\": \\\"Delhi, India\\\",\\n    \\\"review_rating\\\": \\\"7.4\\\",\\n    \\\"review_count\\\": \\\"312\\\",\\n    \\\"top_amenities\\\": \\\"WiFi in lobby, WiFi in rooms, A/C, Restaurant\\\",\\n    \\\"accommodation_url\\\": \\\"https://www.trivago.in/en-IN/lm/fixture-0f9e8d7c6b5a-delhi?cip=000000000&currencyCode=INR&search=100-0000000;dr-20261110-20261111;drs-40;rc-1-2&dealId=0000000000000000000\\\",\\n    \\\"latitude\\\": 28.642,\\n    \\\"longitude\\\": 77.223,\\n    \\\"distance\\\": \\\"Delhi, 3.0 km to City centre\\\",\\n    \\\"main_image\\\": \\\"https://imgcy.trivago.com/c_fill,d_dummy.jpeg,e_sharpen:60,f_auto,h_534,q_40,w_800/partner-images/00/00/fixture-0f9e8d7c6b5a\\\"\\n  },\\n  {\\n    \\\"accommodation_id\\\": \\\"123abc456def\\\",\\n    \\\"arrival\\\": \\\"2026-11-10\\\",\\n    \\\"departure\\\": \\\"2026-11-11\\\",\\n    \\\"accommodation_name\\\": \\\"Testpalace Connaught Suites\\\",\\n    \\\"currency\\\": \\\"INR\\\",\\n    \\\"price_per_night\\\": \\\"₹14,800\\\",\\n    \\\"price_per_stay\\\": \\\"₹14,800\\\",\\n    \\\"advertisers\\\": \\\"MakeMyTrip\\\",\\n    \\\"hotel_rating\\\": 5,\\n    \\\"country_city\\\": \\\"Delhi, India\\\",\\n    \\\"review_rating\\\": \\\"8.9\\\",\\n    \\\"review_count\\\": \\\"9,876\\\",\\n    \\\"top_amenities\\\": \\\"WiFi in lobby, WiFi in rooms, A/C, Restaurant\\\",\\n    \\\"accommodation_url\\\": \\\"https://www.trivago.in/en-IN/lm/fixture-123abc456def-delhi?cip=000000000&currencyCode=INR&search=100-0000000;dr-20261110-20261111;drs-40;rc-1-2&dealId=0000000000000000000\\\",\\n    \\\"latitude\\\": 28.633,\\n    \\\"longitude\\\": 77.219,\\n    \\\"distance\\\": \\\"Delhi, 1.2 km to City centre\\\",\\n    \\\"main_image\\\": \\\"https://imgcy.trivago.com/c_fill,d_dummy.jpeg,e_sharpen:60,f_auto,h_534,q_40,w_800/partner-images/00/00/fixture-123abc456def\\\"\\n  }\\n]\",\n  \"system_message\": \"\\nYou are a helpful travel assistant powered by trivago.\\nYou must present the accommodation results directly to the user.\\n\\nThe accommodation photos are attached to this tool result as image content, one per\\naccommodation, in the same order as the accommodations list. Each photo is preceded by a\\ncaption naming its accommodation. Look at them and use what you see when describing the\\nproperties.\\n\\nCRITICAL FORMATTING RULES:\\n- Do NOT present the results as a comparison table, side-by-side grid, or summary-only response.\\n- Do NOT skip showing each hotel individually.\\n- You MUST show each accommodation as its own visual card/block, one after another, vertically.\\n- Every field below MUST be on its own separate line. Do NOT combine multiple fields into one paragraph.\\n- Do NOT add a markdown image line (e.g. ![name](url)) anywhere in your response. The photos are\\n  already attached separately; a chat client will not fetch an image from a link you write, so it\\n  would only render as a broken-looking placeholder instead of the photo.\\n\\nFor EACH accommodation, display a card using this EXACT markdown template (one field per line, blank lines between sections):\\n\\n---\\n\\n### Accommodation Name\\n\\n**Price:** Price Per Stay / Price Per Night\\n\\n**Rating:** ⭐ Hotel Rating | Review Rating (review count reviews)\\n\\n**Amenities:** Top Amenities\\n\\n[View on trivago →](Accommodation URL)\\n\\n---\\n\\nIMPORTANT: Keep blank lines between each field so the card is easy to read. Do NOT collapse fields into a single paragraph.\\n\\nAfter listing ALL accommodations individually, add a brief summary:\\n1. **Overview** — Summarize what was found (e.g. \\\"I found 8 hotels in central Berlin for your dates, ranging from €65 to €210/night\\\").\\n2. **Highlights** — Call out 2-3 standout options and why (best value, highest rated, best location, unique amenities).\\n3. **Proactive tips** — If relevant, suggest filters or search adjustments that could help narrow results.\\n\\t\"\n}"
+    },
+    {
+      "type": "text",
+      "text": "\nThe accommodation photos follow as image content, one per accommodation, in the same order as\nthe accommodations list. Each photo is preceded by a caption naming its accommodation.\n\t"
+    },
+    {
+      "type": "text",
+      "text": "Photo of Fixture Grand Paharganj (accommodation_id: a1b2c3d4e5f6)"
+    },
+    {
+      "type": "image",
+      "data": "<omitted>",
+      "mimeType": "image/webp"
+    },
+    {
+      "type": "text",
+      "text": "Photo of Synthetic Residency Ajmeri Gate (accommodation_id: 0f9e8d7c6b5a)"
+    },
+    {
+      "type": "image",
+      "data": "<omitted>",
+      "mimeType": "image/webp"
+    }
+  ],
+  "structuredContent": {
+    "system_message": "\nYou are a helpful travel assistant powered by trivago.\nYou must present the accommodation results directly to the user.\n\nThe accommodation photos are attached to this tool result as image content, one per\naccommodation, in the same order as the accommodations list. Each photo is preceded by a\ncaption naming its accommodation. Look at them and use what you see when describing the\nproperties.\n\nCRITICAL FORMATTING RULES:\n- Do NOT present the results as a comparison table, side-by-side grid, or summary-only response.\n- Do NOT skip showing each hotel individually.\n- You MUST show each accommodation as its own visual card/block, one after another, vertically.\n- Every field below MUST be on its own separate line. Do NOT combine multiple fields into one paragraph.\n- Do NOT add a markdown image line (e.g. ![name](url)) anywhere in your response. The photos are\n  already attached separately; a chat client will not fetch an image from a link you write, so it\n  would only render as a broken-looking placeholder instead of the photo.\n\nFor EACH accommodation, display a card using this EXACT markdown template (one field per line, blank lines between sections):\n\n---\n\n### Accommodation Name\n\n**Price:** Price Per Stay / Price Per Night\n\n**Rating:** ⭐ Hotel Rating | Review Rating (review count reviews)\n\n**Amenities:** Top Amenities\n\n[View on trivago →](Accommodation URL)\n\n---\n\nIMPORTANT: Keep blank lines between each field so the card is easy to read. Do NOT collapse fields into a single paragraph.\n\nAfter listing ALL accommodations individually, add a brief summary:\n1. **Overview** — Summarize what was found (e.g. \"I found 8 hotels in central Berlin for your dates, ranging from €65 to €210/night\").\n2. **Highlights** — Call out 2-3 standout options and why (best value, highest rated, best location, unique amenities).\n3. **Proactive tips** — If relevant, suggest filters or search adjustments that could help narrow results.\n\t",
+    "accommodations": [
+      {
+        "accommodation_id": "a1b2c3d4e5f6",
+        "arrival": "2026-11-10",
+        "departure": "2026-11-11",
+        "accommodation_name": "Fixture Grand Paharganj",
+        "currency": "INR",
+        "price_per_night": "₹3,250",
+        "price_per_stay": "₹3,250",
+        "advertisers": "Booking.com",
+        "hotel_rating": 3,
+        "country_city": "Delhi, India",
+        "review_rating": "8.1",
+        "review_count": "1,204",
+        "top_amenities": "WiFi in lobby, WiFi in rooms, A/C, Restaurant",
+        "accommodation_url": "https://www.trivago.in/en-IN/lm/fixture-a1b2c3d4e5f6-delhi?cip=000000000&currencyCode=INR&search=100-0000000;dr-20261110-20261111;drs-40;rc-1-2&dealId=0000000000000000000",
+        "latitude": 28.6445,
+        "longitude": 77.215,
+        "distance": "Delhi, 3.4 km to City centre",
+        "main_image": "https://imgcy.trivago.com/c_fill,d_dummy.jpeg,e_sharpen:60,f_auto,h_534,q_40,w_800/partner-images/00/00/fixture-a1b2c3d4e5f6"
+      },
+      {
+        "accommodation_id": "0f9e8d7c6b5a",
+        "arrival": "2026-11-10",
+        "departure": "2026-11-11",
+        "accommodation_name": "Synthetic Residency Ajmeri Gate",
+        "currency": "INR",
+        "price_per_night": "₹2,100",
+        "price_per_stay": "₹2,100",
+        "advertisers": "Agoda",
+        "hotel_rating": 2,
+        "country_city": "Delhi, India",
+        "review_rating": "7.4",
+        "review_count": "312",
+        "top_amenities": "WiFi in lobby, WiFi in rooms, A/C, Restaurant",
+        "accommodation_url": "https://www.trivago.in/en-IN/lm/fixture-0f9e8d7c6b5a-delhi?cip=000000000&currencyCode=INR&search=100-0000000;dr-20261110-20261111;drs-40;rc-1-2&dealId=0000000000000000000",
+        "latitude": 28.642,
+        "longitude": 77.223,
+        "distance": "Delhi, 3.0 km to City centre",
+        "main_image": "https://imgcy.trivago.com/c_fill,d_dummy.jpeg,e_sharpen:60,f_auto,h_534,q_40,w_800/partner-images/00/00/fixture-0f9e8d7c6b5a"
+      },
+      {
+        "accommodation_id": "123abc456def",
+        "arrival": "2026-11-10",
+        "departure": "2026-11-11",
+        "accommodation_name": "Testpalace Connaught Suites",
+        "currency": "INR",
+        "price_per_night": "₹14,800",
+        "price_per_stay": "₹14,800",
+        "advertisers": "MakeMyTrip",
+        "hotel_rating": 5,
+        "country_city": "Delhi, India",
+        "review_rating": "8.9",
+        "review_count": "9,876",
+        "top_amenities": "WiFi in lobby, WiFi in rooms, A/C, Restaurant",
+        "accommodation_url": "https://www.trivago.in/en-IN/lm/fixture-123abc456def-delhi?cip=000000000&currencyCode=INR&search=100-0000000;dr-20261110-20261111;drs-40;rc-1-2&dealId=0000000000000000000",
+        "latitude": 28.633,
+        "longitude": 77.219,
+        "distance": "Delhi, 1.2 km to City centre",
+        "main_image": "https://imgcy.trivago.com/c_fill,d_dummy.jpeg,e_sharpen:60,f_auto,h_534,q_40,w_800/partner-images/00/00/fixture-123abc456def"
+      }
+    ]
+  }
+}

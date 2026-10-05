@@ -1,0 +1,69 @@
+{
+  "source": "GET https://www.rr.irctc.co.in/RetServcV2/rrservice/listOfStations (unauthenticated)",
+  "fetched_at": "2026-10-05",
+  "raw_shape": {
+    "status": "SUCCESS",
+    "message": "Station List Available",
+    "data": [
+      {
+        "stationCode": "string",
+        "stationName": "string",
+        "email": "string (obfuscated [at]/[dot])",
+        "contact": "string",
+        "managedBy": "IRCTC|Railway|Railway/IRCTC"
+      }
+    ]
+  },
+  "raw_count": 356,
+  "note": "Delhi-area stations from the list, plus BNRS/KPD showing the 2 codes that do not join to OSM ref. Contact and email fields removed before publishing.",
+  "rows": [
+    {
+      "station_code": "NDLS",
+      "station_name": "NEW DELHI",
+      "managed_by": "Railway",
+      "lat": 28.64193,
+      "lng": 77.22175,
+      "osm_match": true
+    },
+    {
+      "station_code": "DLI",
+      "station_name": "DELHI",
+      "managed_by": "Railway",
+      "lat": 28.66093,
+      "lng": 77.22765,
+      "osm_match": true
+    },
+    {
+      "station_code": "NZM",
+      "station_name": "H NIZAMUDDIN",
+      "managed_by": "Railway",
+      "lat": 28.58896,
+      "lng": 77.25352,
+      "osm_match": true
+    },
+    {
+      "station_code": "ANVT",
+      "station_name": "ANAND VIHAR TRM",
+      "managed_by": "IRCTC",
+      "lat": 28.64885,
+      "lng": 77.3155,
+      "osm_match": true
+    },
+    {
+      "station_code": "KPD",
+      "station_name": "KATPADI JN",
+      "managed_by": "Railway",
+      "lat": null,
+      "lng": null,
+      "osm_match": false
+    },
+    {
+      "station_code": "BNRS",
+      "station_name": "BANARAS",
+      "managed_by": "IRCTC",
+      "lat": null,
+      "lng": null,
+      "osm_match": false
+    }
+  ]
+}

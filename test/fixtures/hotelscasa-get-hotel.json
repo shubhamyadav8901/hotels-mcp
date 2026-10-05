@@ -1,0 +1,75 @@
+{
+  "_fixture": "SYNTHETIC. Shape of CallToolResult from HotelsCasa get_hotel with dates (captured 2026-10-05). amenities/description/important_info come back in Spanish even with lang=en; guest_summary is a TRUNCATED JSON string ending in '…' (not parseable).",
+  "_request": {
+    "name": "get_hotel",
+    "arguments": {
+      "hotel_key": "fixture-inn-paharganj-new-delhi",
+      "check_in": "2026-11-10",
+      "check_out": "2026-11-11",
+      "adults": 2,
+      "lang": "en"
+    }
+  },
+  "content": [
+    {
+      "type": "text",
+      "text": "Fixture Inn Paharganj (3★, Hotel, New Delhi) — €18.50 per night — room available for these dates — Room Only, free cancellation, Deluxe Double Room — guest rating 7.8/10 (42 reviews) — https://hotelscasa.com/en/hotel/fixture-inn-paharganj-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp — hotel_key fixture-inn-paharganj-new-delhi"
+    },
+    {
+      "type": "text",
+      "text": "{\"address\":\"1 Fixture Road, Opp Synthetic Station, New Delhi,\",\"amenities\":[\"Wi-Fi gratis\",\"Recepción las 24 horas\",\"Terraza en la azotea\"],\"availability\":{\"available\":true,\"check_in\":\"2026-11-10\",\"check_out\":\"2026-11-11\",\"checked\":true,\"nights\":1},\"check_in_from\":\"12:00 PM\",\"check_out_until\":\"11:00 AM\",\"city_url\":\"https://hotelscasa.com/en/hoteles/new-delhi-in/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp\",\"description\":\"Hotel ficticio cerca de la estación. Texto sintético para pruebas.\",\"description_lang\":\"es\",\"guest_summary\":\"{\\\"cons\\\":[],\\\"pros\\\":[\\\"Close to the station\\\"],\\\"categories\\\":[{\\\"name\\\":\\\"Location\\\",\\\"rating\\\":9,\\\"description\\\":\\\"Synthetic.\\\"}]…\",\"hotel\":{\"hotel_key\":\"fixture-inn-paharganj-new-delhi\",\"name\":\"Fixture Inn Paharganj\",\"type\":\"Hotel\",\"stars\":3,\"rating_10\":7.8,\"reviews_count\":42,\"city\":\"New Delhi\",\"country\":\"IN\",\"lat\":28.6435,\"lng\":77.2175,\"photo_url\":\"https://static.cupid.travel/hotels/fixture_fixture-.jpg\",\"price_from_eur_per_night\":18.5,\"price_note\":\"Price checked live for these dates and occupancy: a room is available. Taxes and fees included; confirmed at booking.\",\"available\":true,\"price_eur_per_night\":18.5,\"price_total_eur\":18.5,\"nights\":1,\"currency\":\"EUR\",\"board\":\"Room Only\",\"room_name\":\"Deluxe Double Room\",\"refundable\":true,\"url\":\"https://hotelscasa.com/en/hotel/fixture-inn-paharganj-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp\"},\"important_info\":\"* Este alojamiento no acepta mascotas. A deposit may be required at the property.\",\"nearby\":[],\"photos\":[\"https://static.cupid.travel/hotels/fixture_fixture-.jpg\",\"https://static.cupid.travel/hotels/fixture_2.jpg\"]}"
+    }
+  ],
+  "structuredContent": {
+    "address": "1 Fixture Road, Opp Synthetic Station, New Delhi,",
+    "amenities": [
+      "Wi-Fi gratis",
+      "Recepción las 24 horas",
+      "Terraza en la azotea"
+    ],
+    "availability": {
+      "available": true,
+      "check_in": "2026-11-10",
+      "check_out": "2026-11-11",
+      "checked": true,
+      "nights": 1
+    },
+    "check_in_from": "12:00 PM",
+    "check_out_until": "11:00 AM",
+    "city_url": "https://hotelscasa.com/en/hoteles/new-delhi-in/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp",
+    "description": "Hotel ficticio cerca de la estación. Texto sintético para pruebas.",
+    "description_lang": "es",
+    "guest_summary": "{\"cons\":[],\"pros\":[\"Close to the station\"],\"categories\":[{\"name\":\"Location\",\"rating\":9,\"description\":\"Synthetic.\"}]…",
+    "hotel": {
+      "hotel_key": "fixture-inn-paharganj-new-delhi",
+      "name": "Fixture Inn Paharganj",
+      "type": "Hotel",
+      "stars": 3,
+      "rating_10": 7.8,
+      "reviews_count": 42,
+      "city": "New Delhi",
+      "country": "IN",
+      "lat": 28.6435,
+      "lng": 77.2175,
+      "photo_url": "https://static.cupid.travel/hotels/fixture_fixture-.jpg",
+      "price_from_eur_per_night": 18.5,
+      "price_note": "Price checked live for these dates and occupancy: a room is available. Taxes and fees included; confirmed at booking.",
+      "available": true,
+      "price_eur_per_night": 18.5,
+      "price_total_eur": 18.5,
+      "nights": 1,
+      "currency": "EUR",
+      "board": "Room Only",
+      "room_name": "Deluxe Double Room",
+      "refundable": true,
+      "url": "https://hotelscasa.com/en/hotel/fixture-inn-paharganj-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp"
+    },
+    "important_info": "* Este alojamiento no acepta mascotas. A deposit may be required at the property.",
+    "nearby": [],
+    "photos": [
+      "https://static.cupid.travel/hotels/fixture_fixture-.jpg",
+      "https://static.cupid.travel/hotels/fixture_2.jpg"
+    ]
+  },
+  "isError": false
+}

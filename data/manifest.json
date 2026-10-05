@@ -1,0 +1,40 @@
+{
+  "datasets": {
+    "airports": {
+      "rows": 151,
+      "built_at": "2026-10-04T22:51:05.265Z",
+      "source": "OurAirports (ourairports.com)",
+      "licence": "Public domain"
+    },
+    "retiring_rooms": {
+      "rows": 356,
+      "built_at": "2026-10-04T22:51:05.265Z",
+      "source": "IRCTC retiring-room station list (rr.irctc.co.in), joined to OpenStreetMap stations",
+      "licence": "Station list: IRCTC public data; coordinates: ODbL — © OpenStreetMap contributors"
+    },
+    "stations": {
+      "rows": 9195,
+      "built_at": "2026-10-04T22:51:05.265Z",
+      "source": "OpenStreetMap via Overpass API",
+      "licence": "ODbL 1.0 — © OpenStreetMap contributors"
+    },
+    "bus_stations": {
+      "rows": 5306,
+      "built_at": "2026-10-04T22:51:05.265Z",
+      "source": "OpenStreetMap via Overpass API",
+      "licence": "ODbL 1.0 — © OpenStreetMap contributors"
+    },
+    "lodging": {
+      "rows": 23915,
+      "built_at": "2026-10-04T22:51:05.265Z",
+      "source": "OpenStreetMap via Overpass API",
+      "licence": "ODbL 1.0 — © OpenStreetMap contributors"
+    },
+    "xotelo_keys": {
+      "rows": 548,
+      "built_at": "2026-10-05T10:16:33.851Z",
+      "source": "Xotelo /list (data.xotelo.com); location keys parsed from TripAdvisor hotel URLs",
+      "licence": "Derived from Xotelo API responses (TripAdvisor data); no redistribution licence stated"
+    }
+  }
+}

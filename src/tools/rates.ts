@@ -1,0 +1,206 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { AppError, toAppError } from "../core/errors.js";
+import type { HotelMemory } from "../core/hotel-memory.js";
+import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/hotel-search.js";
+import { isSameHotel, nameSimilarity } from "../core/merge.js";
+import type { PriceQuote } from "../core/types.js";
+import { convertToInr } from "../providers/fx.js";
+import type { Xotelo } from "../providers/xotelo.js";
+import { handle, readOnly } from "./common.js";
+import { validateDates } from "./hotels.js";
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
+
+const QuoteOut = z.object({
+  seller: z.string(),
+  source: z.string(),
+  per_night_inr: z.number().nullable(),
+  per_night: z.number(),
+  currency: z.string(),
+  total: z.number().nullable(),
+  includes_taxes: z.boolean().nullable(),
+  available: z.boolean().nullable(),
+  refundable: z.boolean().nullable(),
+  url: z.string().nullable(),
+  fetched_at: z.string(),
+});
+
+export interface RatesToolDeps {
+  hotels: HotelSearchDeps;
+  xotelo: Pick<Xotelo, "rates" | "info">;
+  memory: HotelMemory;
+  now: () => Date;
+}
+
+// Re-searching this close to the hotel finds it in every source without pulling in the neighbourhood.
+const LOOKUP_RADIUS_KM = 0.4;
+
+export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void {
+  server.registerTool(
+    "get_hotel_rates",
+    {
+      title: "Compare a hotel's prices across sites",
+      description:
+        "Fetches current prices for one hotel from every source for the given dates and lists them per " +
+        "booking site (e.g. Booking.com, Agoda, Trip.com, MakeMyTrip, the hotel's own site), cheapest first, in " +
+        "INR with the original currency, tax status, availability and links. The hotel is a hotel_id from " +
+        "search_hotels or plan_stays, or a name with lat/lng. Does not book.",
+      inputSchema: {
+        hotel_id: z
+          .string()
+          .optional()
+          .describe("hotel_id (or any of its also_ids) from search_hotels or plan_stays."),
+        name: z.string().max(120).optional().describe("Hotel name, when not giving hotel_id."),
+        lat: z.number().min(6).max(37.5).optional().describe("Hotel latitude, when not giving hotel_id."),
+        lng: z.number().min(68).max(97.5).optional().describe("Hotel longitude, when not giving hotel_id."),
+        check_in: isoDate.describe("Check-in date, YYYY-MM-DD (IST)."),
+        check_out: isoDate.describe("Check-out date, YYYY-MM-DD."),
+        adults: z
+          .number()
+          .int()
+          .min(1)
+          .max(8)
+          .default(2)
+          .describe("Guests in the room; searches are for one room."),
+      },
+      outputSchema: {
+        hotel: z.object({
+          hotel_id: z.string(),
+          also_ids: z.array(z.string()),
+          name: z.string(),
+          lat: z.number(),
+          lng: z.number(),
+          stars: z.number().nullable(),
+          rating_10: z.number().nullable(),
+          review_count: z.number().nullable(),
+        }),
+        check_in: z.string(),
+        check_out: z.string(),
+        prices: z.array(QuoteOut),
+        cheapest_inr: z.number().nullable(),
+        priciest_inr: z.number().nullable(),
+        sources_ok: z.array(z.string()),
+        sources_failed: z.array(z.object({ source: z.string(), code: z.string(), message: z.string() })),
+        notes: z.array(z.string()),
+      },
+      annotations: readOnly("Compare a hotel's prices across sites"),
+    },
+    handle(async (a) => {
+      validateDates(a.check_in, a.check_out, deps.now());
+      const known = a.hotel_id ? deps.memory.get(a.hotel_id)?.hotel : undefined;
+      if (a.hotel_id && !known && (a.lat === undefined || a.lng === undefined || !a.name)) {
+        throw new AppError(
+          "NOT_FOUND",
+          `hotel_id ${a.hotel_id} is not from a recent search.`,
+          "Run search_hotels again, or pass the hotel's name, lat and lng.",
+        );
+      }
+      if (!known && (a.lat === undefined || a.lng === undefined || !a.name)) {
+        throw new AppError("INVALID_INPUT", "Give a hotel_id, or the hotel's name, lat and lng.");
+      }
+      const target = known ?? { hotel_id: "", also_ids: [], name: a.name!, lat: a.lat!, lng: a.lng! };
+      const targetIds = new Set([target.hotel_id, ...target.also_ids].filter(Boolean));
+
+      const r = await searchHotels(
+        deps.hotels,
+        {
+          lat: target.lat,
+          lng: target.lng,
+          radius_km: LOOKUP_RADIUS_KM,
+          check_in: a.check_in,
+          check_out: a.check_out,
+          adults: a.adults,
+        },
+        { sort: "distance", include_unpriced: true },
+      );
+      // Same listing by id, else the nearest listing that looks like the same property.
+      const match: RankedHotel | undefined =
+        r.hotels.find((h) => [h.hotel_id, ...h.also_ids].some((id) => targetIds.has(id))) ??
+        r.hotels
+          .filter((h) => isSameHotel(target, h))
+          .sort(
+            (x, y) =>
+              nameSimilarity(target.name, y.name) - nameSimilarity(target.name, x.name) ||
+              x.distance_km - y.distance_km,
+          )[0];
+      if (!match) {
+        throw new AppError(
+          "NOT_FOUND",
+          `No source lists "${target.name}" at these coordinates for ${a.check_in}–${a.check_out}.`,
+          "Check the dates, or search_hotels again near the hotel.",
+        );
+      }
+
+      const prices: PriceQuote[] = [...match.prices];
+      const sources_failed = [...r.sources_failed];
+      // Xotelo prices only the nearest hotels during a search; fetch this one's per-site prices directly.
+      const xoteloId = [match.hotel_id, ...match.also_ids].find((id) => id.startsWith("xotelo:"));
+      if (xoteloId && !prices.some((p) => p.source === "xotelo")) {
+        try {
+          const quotes = await deps.hotels.registry.run(deps.xotelo.info.id, () =>
+            deps.xotelo.rates(xoteloId.slice("xotelo:".length), a.check_in, a.check_out, a.adults),
+          );
+          const fx = quotes.some((q) => q.currency !== "INR") ? await deps.hotels.fx.rates() : null;
+          for (const q of quotes) {
+            prices.push({
+              ...q,
+              per_night_inr:
+                q.currency === "INR"
+                  ? Math.round(q.per_night)
+                  : fx
+                    ? convertToInr(q.per_night, q.currency, fx)
+                    : null,
+            });
+          }
+        } catch (err) {
+          const e = toAppError(err);
+          sources_failed.push({ source: deps.xotelo.info.id, code: e.code, message: e.message });
+        }
+      }
+
+      const sorted = prices
+        .map((p) => ({
+          seller: p.seller ?? p.source,
+          source: p.source,
+          per_night_inr: p.per_night_inr,
+          per_night: p.per_night,
+          currency: p.currency,
+          total: p.total,
+          includes_taxes: p.includes_taxes,
+          available: p.available,
+          refundable: p.refundable,
+          url: p.url,
+          fetched_at: p.fetched_at,
+        }))
+        .sort((x, y) => (x.per_night_inr ?? Infinity) - (y.per_night_inr ?? Infinity));
+      const inr = sorted.map((p) => p.per_night_inr).filter((v): v is number => v !== null);
+
+      deps.memory.remember([match], { check_in: a.check_in, check_out: a.check_out });
+      const notes = [
+        "Meta-search prices can differ at checkout; includes_taxes=null means the source does not say whether GST is included.",
+      ];
+      if (sorted.length === 0) notes.push("No source has a live price for this hotel on these dates.");
+      return {
+        hotel: {
+          hotel_id: match.hotel_id,
+          also_ids: match.also_ids,
+          name: match.name,
+          lat: match.lat,
+          lng: match.lng,
+          stars: match.stars,
+          rating_10: match.rating_10,
+          review_count: match.review_count,
+        },
+        check_in: a.check_in,
+        check_out: a.check_out,
+        prices: sorted,
+        cheapest_inr: inr.length ? Math.min(...inr) : null,
+        priciest_inr: inr.length ? Math.max(...inr) : null,
+        sources_ok: r.sources_ok,
+        sources_failed,
+        notes,
+      };
+    }),
+  );
+}

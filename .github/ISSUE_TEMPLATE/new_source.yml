@@ -1,0 +1,29 @@
+name: New data source
+description: Propose adding a data provider
+labels: [enhancement, data-source]
+body:
+  - type: input
+    id: source
+    attributes:
+      label: Source (name and URL)
+    validations:
+      required: true
+  - type: textarea
+    id: provides
+    attributes:
+      label: What it provides
+      description: Capabilities (live prices, availability, geocoding, routing, lodging locations…), coverage in India, currency and freshness.
+    validations:
+      required: true
+  - type: textarea
+    id: terms
+    attributes:
+      label: Terms of use and access
+      description: Is it first-party (an official API or MCP server), a public service with a usage policy, or unofficial? What do its terms say about automated access and storage? Does it need keys, and what are the quotas?
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Implementation notes
+      description: Endpoints or MCP tools (read-only ones only), formats, rate limits, and how results would merge with existing sources.

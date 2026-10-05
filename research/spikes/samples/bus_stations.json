@@ -1,0 +1,148 @@
+{
+ "source": "Overpass API (overpass-api.de)",
+ "license": "ODbL 1.0, (c) OpenStreetMap contributors",
+ "fetched_at": "2026-10-05",
+ "query": "area[\"ISO3166-2\"=\"IN-DL\"]; nwr[amenity=bus_station]; out center tags",
+ "rows": [
+  {
+   "osm_id": "n943749501",
+   "name": "Mori Gate Bus Terminal",
+   "operator": null,
+   "lat": 28.66836,
+   "lng": 77.22518
+  },
+  {
+   "osm_id": "n1665799172",
+   "name": "Safdarjung Terminal",
+   "operator": null,
+   "lat": 28.57966,
+   "lng": 77.21349
+  },
+  {
+   "osm_id": "n2036039194",
+   "name": "Aya Nagar Bus Terminal",
+   "operator": null,
+   "lat": 28.47683,
+   "lng": 77.13049
+  },
+  {
+   "osm_id": "n9544997484",
+   "name": "Karol Bagh Terminal",
+   "operator": "DTC",
+   "lat": 28.64803,
+   "lng": 77.20084
+  },
+  {
+   "osm_id": "n11765231237",
+   "name": "Karol Bagh Terminal",
+   "operator": "DTC",
+   "lat": 28.64828,
+   "lng": 77.20082
+  },
+  {
+   "osm_id": "n13269526176",
+   "name": "Harewali Bus Terminal",
+   "operator": "DTC",
+   "lat": 28.83108,
+   "lng": 77.00756
+  },
+  {
+   "osm_id": "n13269544856",
+   "name": "Harewali Bus Terminal",
+   "operator": "DTC",
+   "lat": 28.83112,
+   "lng": 77.00746
+  },
+  {
+   "osm_id": "w40943545",
+   "name": "Kashmere Gate ISBT",
+   "operator": null,
+   "lat": 28.66869,
+   "lng": 77.23042
+  },
+  {
+   "osm_id": "w58472851",
+   "name": "Uttam Nagar Terminal",
+   "operator": null,
+   "lat": 28.62561,
+   "lng": 77.06557
+  },
+  {
+   "osm_id": "w80439683",
+   "name": "Sarai Kale Khan ISBT",
+   "operator": null,
+   "lat": 28.58508,
+   "lng": 77.25905
+  },
+  {
+   "osm_id": "w284192857",
+   "name": "Shivaji Stadium Bus Terminal",
+   "operator": "Delhi Transport Corporation",
+   "lat": 28.63252,
+   "lng": 77.21553
+  },
+  {
+   "osm_id": "w289960317",
+   "name": "Doctor Ambedkar Terminal (Dilli Gate)",
+   "operator": "Delhi Transport Corporation (DTC), Delhi Transit",
+   "lat": 28.63939,
+   "lng": 77.24373
+  },
+  {
+   "osm_id": "w632926871",
+   "name": "Mehrauli Bus Terminal",
+   "operator": "Delhi Transport Corporation",
+   "lat": 28.52251,
+   "lng": 77.18235
+  },
+  {
+   "osm_id": "w632926885",
+   "name": "Lado Sarai Bus Terminal",
+   "operator": "Delhi Transport Corporation",
+   "lat": 28.52367,
+   "lng": 77.19124
+  },
+  {
+   "osm_id": "w653235648",
+   "name": "Jal Vihar Terminal",
+   "operator": null,
+   "lat": 28.57848,
+   "lng": 77.24627
+  },
+  {
+   "osm_id": "w683662846",
+   "name": "Shahdara Terminal",
+   "operator": "Delhi Transport Corporation",
+   "lat": 28.67404,
+   "lng": 77.28723
+  },
+  {
+   "osm_id": "w1076338267",
+   "name": "Mundhela Kalan Bus terminal",
+   "operator": null,
+   "lat": 28.60756,
+   "lng": 76.89224
+  },
+  {
+   "osm_id": "w1172450748",
+   "name": "Rohini Bus Terminal",
+   "operator": null,
+   "lat": 28.71773,
+   "lng": 77.0642
+  },
+  {
+   "osm_id": "w1263403979",
+   "name": "Manglapuri Bus Terminal",
+   "operator": "DTC",
+   "lat": 28.59043,
+   "lng": 77.08692
+  },
+  {
+   "osm_id": "n1374470982",
+   "name": "Hari Nagar Bus Depot",
+   "operator": null,
+   "lat": 28.62391,
+   "lng": 77.10168
+  }
+ ]
+}

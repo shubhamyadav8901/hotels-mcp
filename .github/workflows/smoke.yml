@@ -1,0 +1,33 @@
+name: Smoke test live sources
+
+# Manual only: runs the live acceptance checks in scripts/smoke.ts against the
+# real upstream sources (a few minutes, modest request volume). Set the
+# repository variable HTTP_USER_AGENT to an app name and contact URL, as the
+# Nominatim usage policy requires. Google Hotels is checked only when the
+# SERPAPI_KEY secret is set. Unofficial sources stay off unless chosen below.
+on:
+  workflow_dispatch:
+    inputs:
+      unofficial:
+        description: "Also enable unofficial sources (ENABLE_UNOFFICIAL_SOURCES)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run smoke
+        env:
+          HTTP_USER_AGENT: ${{ vars.HTTP_USER_AGENT || format('india-hotels-mcp/0.1 (+https://github.com/{0})', github.repository) }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          ENABLE_UNOFFICIAL_SOURCES: ${{ inputs.unofficial && 'true' || 'false' }}

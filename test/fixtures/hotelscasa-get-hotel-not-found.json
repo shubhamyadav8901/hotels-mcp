@@ -1,0 +1,21 @@
+{
+  "_fixture": "Real shape of get_hotel with unknown key (captured 2026-10-05).",
+  "_request": {
+    "name": "get_hotel",
+    "arguments": {
+      "hotel_key": "no-such-hotel-xyz",
+      "lang": "en"
+    }
+  },
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"error\":\"not_found\",\"message\":\"No hotel with that hotel_key.\"}"
+    }
+  ],
+  "structuredContent": {
+    "error": "not_found",
+    "message": "No hotel with that hotel_key."
+  },
+  "isError": true
+}

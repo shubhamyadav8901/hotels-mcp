@@ -1,0 +1,47 @@
+{
+  "error": null,
+  "result": {
+    "total_count": 3,
+    "limit": 3,
+    "offset": 0,
+    "list": [
+      {
+        "name": "Hotel Fixture Grand",
+        "key": "g9900001-d9900101",
+        "accommodation_type": "Hotel",
+        "url": "https://www.tripadvisor.com/Hotel_Review-g9900001-d9900101-Reviews-Hotel_Fixture_Grand-Testpur_Testpur_District_Examplestan.html",
+        "review_summary": { "rating": 4.5, "count": 1234 },
+        "price_ranges": { "maximum": 120, "minimum": 60 },
+        "geo": { "latitude": 28.6001, "longitude": 77.2001 },
+        "image": "https://example.invalid/img/fixture-grand.jpg",
+        "mentions": [],
+        "merchandising_labels": []
+      },
+      {
+        "name": "Sample Hostel Testpur",
+        "key": "g9900001-d9900102",
+        "accommodation_type": "Hostel",
+        "url": "https://www.tripadvisor.com/Hotel_Review-g9900002-d9900102-Reviews-Sample_Hostel_Testpur-Sub_Area_Testpur_Testpur_District_Examplestan.html",
+        "review_summary": { "rating": 4.1, "count": 87 },
+        "price_ranges": { "maximum": 25, "minimum": 9 },
+        "geo": { "latitude": 28.6102, "longitude": 77.2153 },
+        "image": "https://example.invalid/img/sample-hostel.jpg",
+        "mentions": ["Budget"],
+        "merchandising_labels": []
+      },
+      {
+        "name": "Budgetco 00042 Demo Residency",
+        "key": "g9900001-d9900103",
+        "accommodation_type": "Hotel",
+        "url": "https://www.tripadvisor.com/Hotel_Review-g9900001-d9900103-Reviews-Budgetco_00042_Demo_Residency-Testpur_Testpur_District_Examplestan.html",
+        "review_summary": { "rating": 0, "count": 0 },
+        "price_ranges": { "maximum": null, "minimum": null },
+        "geo": { "latitude": 28.6503, "longitude": 77.1904 },
+        "image": "https://example.invalid/img/demo-residency.jpg",
+        "mentions": [],
+        "merchandising_labels": []
+      }
+    ]
+  },
+  "timestamp": 1791150000000
+}

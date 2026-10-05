@@ -1,0 +1,168 @@
+{
+ "source": "Overpass API (overpass-api.de)",
+ "license": "ODbL 1.0, (c) OpenStreetMap contributors",
+ "fetched_at": "2026-10-05",
+ "query": "area[\"ISO3166-2\"=\"IN-DL\"]; nwr[railway~\"^(station|halt)$\"]; out center tags; mainline only (no station=subway/light_rail/monorail)",
+ "rows": [
+  {
+   "osm_id": "n6131069513",
+   "code": "NDLS",
+   "name": "New Delhi",
+   "kind": "station",
+   "lat": 28.64193,
+   "lng": 77.22175
+  },
+  {
+   "osm_id": "n913095905",
+   "code": "DLI",
+   "name": "Delhi Junction",
+   "kind": "station",
+   "lat": 28.66093,
+   "lng": 77.22765
+  },
+  {
+   "osm_id": "n1988585233",
+   "code": "NZM",
+   "name": "Hazrat Nizamuddin Junction",
+   "kind": "station",
+   "lat": 28.58896,
+   "lng": 77.25352
+  },
+  {
+   "osm_id": "n944845341",
+   "code": "ANVT",
+   "name": "Anand Vihar Terminal",
+   "kind": "station",
+   "lat": 28.64885,
+   "lng": 77.3155
+  },
+  {
+   "osm_id": "n915407469",
+   "code": "DEE",
+   "name": "Delhi Sarai Rohilla",
+   "kind": "station",
+   "lat": 28.66275,
+   "lng": 77.18526
+  },
+  {
+   "osm_id": "n663759047",
+   "code": "DSA",
+   "name": "Delhi Shahdara Junction",
+   "kind": "station",
+   "lat": 28.67346,
+   "lng": 77.29221
+  },
+  {
+   "osm_id": "n632050796",
+   "code": "DEC",
+   "name": "Delhi Cantonment",
+   "kind": "station",
+   "lat": 28.61171,
+   "lng": 77.11566
+  },
+  {
+   "osm_id": "n913081055",
+   "code": "SZM",
+   "name": "Subzimandi",
+   "kind": "station",
+   "lat": 28.66851,
+   "lng": 77.20049
+  },
+  {
+   "osm_id": "n910356583",
+   "code": "OKA",
+   "name": "Okhla",
+   "kind": "station",
+   "lat": 28.55948,
+   "lng": 77.26562
+  },
+  {
+   "osm_id": "n1988513599",
+   "code": "TKJ",
+   "name": "Tilak Bridge",
+   "kind": "station",
+   "lat": 28.62812,
+   "lng": 77.2374
+  },
+  {
+   "osm_id": "n914644362",
+   "code": "PTNR",
+   "name": "Patel Nagar",
+   "kind": "station",
+   "lat": 28.65981,
+   "lng": 77.15696
+  },
+  {
+   "osm_id": "n1988513580",
+   "code": "DKZ",
+   "name": "Delhi Kishanganj",
+   "kind": "station",
+   "lat": 28.66274,
+   "lng": 77.19791
+  },
+  {
+   "osm_id": "n252584508",
+   "code": "ANVR",
+   "name": "Anand Vihar",
+   "kind": "station",
+   "lat": 28.64981,
+   "lng": 77.3145
+  },
+  {
+   "osm_id": "n345195834",
+   "code": "NUR",
+   "name": "Narela",
+   "kind": "station",
+   "lat": 28.84648,
+   "lng": 77.08566
+  },
+  {
+   "osm_id": "n345195839",
+   "code": "BHD",
+   "name": "Badli",
+   "kind": "halt",
+   "lat": 28.74654,
+   "lng": 77.13746
+  },
+  {
+   "osm_id": "n345195841",
+   "code": "HUK",
+   "name": "Holambi Kalan",
+   "kind": "station",
+   "lat": 28.80158,
+   "lng": 77.10248
+  },
+  {
+   "osm_id": "n345199448",
+   "code": "KHKN",
+   "name": "Khera Kalan",
+   "kind": "station",
+   "lat": 28.76969,
+   "lng": 77.11586
+  },
+  {
+   "osm_id": "n663760328",
+   "code": "VVB",
+   "name": "Vivek Vihar",
+   "kind": "station",
+   "lat": 28.67319,
+   "lng": 77.31829
+  },
+  {
+   "osm_id": "n910356438",
+   "code": "DSJ",
+   "name": "Delhi Safdarjang",
+   "kind": "station",
+   "lat": 28.5822,
+   "lng": 77.18621
+  },
+  {
+   "osm_id": "n910356522",
+   "code": "SWNR",
+   "name": "Sewa Nagar",
+   "kind": "station",
+   "lat": 28.57895,
+   "lng": 77.22769
+  }
+ ]
+}

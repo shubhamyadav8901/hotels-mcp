@@ -1,0 +1,46 @@
+{
+  "search_metadata": { "id": "fixture0001", "status": "Success" },
+  "search_parameters": { "engine": "google_hotels", "q": "hotels near 28.6430,77.2194", "gl": "in", "hl": "en", "currency": "INR" },
+  "properties": [
+    {
+      "type": "hotel",
+      "name": "Fixture Palace Paharganj",
+      "link": "https://example.invalid/fixture-palace",
+      "property_token": "ChFixturePalace001",
+      "gps_coordinates": { "latitude": 28.6445, "longitude": 77.2152 },
+      "hotel_class": "3-star hotel",
+      "extracted_hotel_class": 3,
+      "overall_rating": 4.2,
+      "reviews": 812,
+      "rate_per_night": { "lowest": "₹2,450", "extracted_lowest": 2450, "before_taxes_fees": "₹2,188", "extracted_before_taxes_fees": 2188 },
+      "total_rate": { "lowest": "₹2,450", "extracted_lowest": 2450, "before_taxes_fees": "₹2,188", "extracted_before_taxes_fees": 2188 },
+      "prices": [
+        { "source": "MakeMyTrip", "logo": "https://example.invalid/mmt.png", "rate_per_night": { "lowest": "₹2,450", "extracted_lowest": 2450, "before_taxes_fees": "₹2,188", "extracted_before_taxes_fees": 2188 } },
+        { "source": "Booking.com", "logo": "https://example.invalid/bcom.png", "rate_per_night": { "lowest": "₹2,610", "extracted_lowest": 2610 } }
+      ]
+    },
+    {
+      "type": "hotel",
+      "name": "Sample Residency Karol Bagh",
+      "link": "https://example.invalid/sample-residency",
+      "property_token": "ChSampleResidency002",
+      "gps_coordinates": { "latitude": 28.6519, "longitude": 77.1909 },
+      "hotel_class": "2-star hotel",
+      "extracted_hotel_class": 2,
+      "overall_rating": 3.8,
+      "reviews": 140,
+      "rate_per_night": { "lowest": "₹1,320", "extracted_lowest": 1320 },
+      "total_rate": { "lowest": "₹1,320", "extracted_lowest": 1320 }
+    },
+    {
+      "type": "vacation rental",
+      "name": "Demo Farmstay Far Away",
+      "link": "https://example.invalid/demo-farmstay",
+      "property_token": "ChDemoFarmstay003",
+      "gps_coordinates": { "latitude": 28.9, "longitude": 77.6 },
+      "overall_rating": 4.6,
+      "reviews": 12,
+      "rate_per_night": { "lowest": "₹5,000", "extracted_lowest": 5000 }
+    }
+  ]
+}

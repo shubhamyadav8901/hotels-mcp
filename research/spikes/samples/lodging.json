@@ -1,0 +1,228 @@
+{
+ "source": "Overpass API (overpass-api.de)",
+ "license": "ODbL 1.0, (c) OpenStreetMap contributors",
+ "fetched_at": "2026-10-05",
+ "query": "area[\"ISO3166-2\"=\"IN-DL\"]; nwr[tourism~\"^(hotel|guest_house|hostel|motel|apartment)$\"]; out center tags",
+ "rows": [
+  {
+   "osm_id": "w154186641",
+   "name": "WelcomHotel Dwarka",
+   "type": "hotel",
+   "stars": "5",
+   "brand": "ITC Hotels",
+   "has_phone": true,
+   "has_website": true,
+   "lat": 28.57936,
+   "lng": 77.05605
+  },
+  {
+   "osm_id": "w265771341",
+   "name": "The Leela Palace Kempinski",
+   "type": "hotel",
+   "stars": "5",
+   "brand": "The Leela",
+   "has_phone": true,
+   "has_website": true,
+   "lat": 28.58014,
+   "lng": 77.18931
+  },
+  {
+   "osm_id": "w1230064950",
+   "name": "Crowne Plaza Rohini",
+   "type": "hotel",
+   "stars": "4",
+   "brand": "Crowne Plaza",
+   "has_phone": true,
+   "has_website": true,
+   "lat": 28.71993,
+   "lng": 77.10972
+  },
+  {
+   "osm_id": "n1483256400",
+   "name": "Radisson Blu Marina Hotel",
+   "type": "hotel",
+   "stars": "4",
+   "brand": "Radisson",
+   "has_phone": true,
+   "has_website": true,
+   "lat": 28.63397,
+   "lng": 77.21717
+  },
+  {
+   "osm_id": "n6771782355",
+   "name": "Hotel Ambica Palace",
+   "type": "hotel",
+   "stars": "3",
+   "brand": "Ambica Palace",
+   "has_phone": true,
+   "has_website": true,
+   "lat": 28.56863,
+   "lng": 77.19908
+  },
+  {
+   "osm_id": "n12825691133",
+   "name": "Hilton Garden Inn New Delhi Saket",
+   "type": "hotel",
+   "stars": "4",
+   "brand": "Hilton Garden Inn",
+   "has_phone": true,
+   "has_website": true,
+   "lat": 28.52798,
+   "lng": 77.2175
+  },
+  {
+   "osm_id": "w1368758856",
+   "name": "Hyatt Centric",
+   "type": "hotel",
+   "stars": "5",
+   "brand": "Hyatt Centric",
+   "has_phone": false,
+   "has_website": true,
+   "lat": 28.62898,
+   "lng": 77.07859
+  },
+  {
+   "osm_id": "n5929204674",
+   "name": "City Hotel",
+   "type": "hotel",
+   "stars": "3",
+   "brand": "Galaxy international",
+   "has_phone": true,
+   "has_website": false,
+   "lat": 28.58501,
+   "lng": 77.07271
+  },
+  {
+   "osm_id": "w360259497",
+   "name": "Le Méridien",
+   "type": "hotel",
+   "stars": "5",
+   "brand": "Le Méridien",
+   "has_phone": false,
+   "has_website": false,
+   "lat": 28.61881,
+   "lng": 77.2177
+  },
+  {
+   "osm_id": "r4208294",
+   "name": "ANdaZ Delhi - a concept by Hyatt",
+   "type": "hotel",
+   "stars": "5",
+   "brand": "ANdAZ",
+   "has_phone": false,
+   "has_website": false,
+   "lat": 28.55424,
+   "lng": 77.12203
+  },
+  {
+   "osm_id": "w764306716",
+   "name": "Satvik by Chhabra Farm",
+   "type": "hotel",
+   "stars": null,
+   "brand": "Satvik",
+   "has_phone": true,
+   "has_website": true,
+   "lat": 28.54214,
+   "lng": 77.07046
+  },
+  {
+   "osm_id": "w1211582154",
+   "name": "Four Points by Sheraton",
+   "type": "hotel",
+   "stars": null,
+   "brand": "Four Points by Sheraton",
+   "has_phone": true,
+   "has_website": true,
+   "lat": 28.52834,
+   "lng": 77.09887
+  },
+  {
+   "osm_id": "n4895814022",
+   "name": "Townhouse 002 OYO Rooms",
+   "type": "hotel",
+   "stars": null,
+   "brand": null,
+   "has_phone": false,
+   "has_website": false,
+   "lat": 28.55943,
+   "lng": 77.20042
+  },
+  {
+   "osm_id": "n5235659422",
+   "name": "OYO 7684 Hotel Repose Villa",
+   "type": "hotel",
+   "stars": null,
+   "brand": "OYO",
+   "has_phone": false,
+   "has_website": false,
+   "lat": 28.64346,
+   "lng": 77.2115
+  },
+  {
+   "osm_id": "n6124477820",
+   "name": "OYO Townhouse",
+   "type": "hotel",
+   "stars": null,
+   "brand": "OYO",
+   "has_phone": false,
+   "has_website": false,
+   "lat": 28.56405,
+   "lng": 77.24988
+  },
+  {
+   "osm_id": "n608435824",
+   "name": "Master Guest House",
+   "type": "guest_house",
+   "stars": null,
+   "brand": null,
+   "has_phone": true,
+   "has_website": true,
+   "lat": 28.63468,
+   "lng": 77.18504
+  },
+  {
+   "osm_id": "n1241009821",
+   "name": "Arjun Guesthouse",
+   "type": "guest_house",
+   "stars": null,
+   "brand": null,
+   "has_phone": false,
+   "has_website": false,
+   "lat": 28.64082,
+   "lng": 77.21211
+  },
+  {
+   "osm_id": "n1332266859",
+   "name": "Tree of Life",
+   "type": "guest_house",
+   "stars": null,
+   "brand": null,
+   "has_phone": false,
+   "has_website": false,
+   "lat": 28.52439,
+   "lng": 77.20444
+  },
+  {
+   "osm_id": "n1549833159",
+   "name": "DSUI",
+   "type": "guest_house",
+   "stars": null,
+   "brand": null,
+   "has_phone": false,
+   "has_website": false,
+   "lat": 28.59408,
+   "lng": 77.16211
+  },
+  {
+   "osm_id": "n2008194606",
+   "name": "Cottage Ganga Inn",
+   "type": "guest_house",
+   "stars": null,
+   "brand": null,
+   "has_phone": true,
+   "has_website": false,
+   "lat": 28.64136,
+   "lng": 77.21246
+  }
+ ]
+}

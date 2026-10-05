@@ -1,0 +1,20 @@
+Datasets in this directory
+==========================
+
+stations.json.gz, bus_stations.json.gz, lodging.json.gz
+  Derived from OpenStreetMap data via the Overpass API.
+  © OpenStreetMap contributors. Available under the Open Database License (ODbL) 1.0:
+  https://opendatacommons.org/licenses/odbl/1-0/  —  https://www.openstreetmap.org/copyright
+  These derived databases are themselves made available under the ODbL 1.0.
+
+retiring_rooms.json.gz
+  Station list from IRCTC's public retiring-room portal (https://www.rr.irctc.co.in/), refreshed manually.
+  Coordinates joined from the OpenStreetMap stations above (ODbL 1.0, © OpenStreetMap contributors).
+
+airports.json.gz
+  From OurAirports (https://ourairports.com/data/), released into the public domain.
+
+xotelo_keys.json.gz (when present)
+  Location keys and centres derived from Xotelo API responses (https://xotelo.com).
+
+Rebuild with `npm run build:data` (see README). Build dates and row counts are in manifest.json.

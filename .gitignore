@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+.cache
+data/.xotelo-checkpoint.json
+data/.xotelo-checkpoint.json.tmp
+osrm-data

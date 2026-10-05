@@ -1,0 +1,42 @@
+name: Data error
+description: A price, hotel location, distance, drive time or other fact is wrong
+labels: [data]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is wrong?
+      options:
+        - Price or availability
+        - Hotel, station, airport or place location
+        - Distance or drive/walk time
+        - Retiring-room information
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: query
+    attributes:
+      label: Tool and arguments
+      placeholder: "search_hotels, station_code NDLS, radius_km 2"
+    validations:
+      required: true
+  - type: input
+    id: dates
+    attributes:
+      label: Stay dates, and when you ran the query
+      placeholder: "check-in 2026-11-14, check-out 2026-11-15; queried 2026-10-05 18:30 IST"
+  - type: textarea
+    id: returned
+    attributes:
+      label: What the server returned
+      description: Paste the relevant part of the tool output, including `source`, `seller` and `fetched_at`.
+    validations:
+      required: true
+  - type: textarea
+    id: correct
+    attributes:
+      label: What is correct, and where you saw it
+      description: Name the reference (the seller's page, the hotel, a map). Describe it or link to it; please don't paste copyrighted pages. Prices change quickly, so say when you checked.
+    validations:
+      required: true

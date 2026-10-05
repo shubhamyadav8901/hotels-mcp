@@ -1,0 +1,8 @@
+The OpenStreetMap-derived databases in this directory (stations.json.gz, bus_stations.json.gz,
+lodging.json.gz and the coordinates in retiring_rooms.json.gz) are made available under the
+Open Database License 1.0: https://opendatacommons.org/licenses/odbl/1-0/
+
+© OpenStreetMap contributors — https://www.openstreetmap.org/copyright
+
+See NOTICE for the sources and licences of the other files in this directory.
+The source code of this project is licensed separately (see ../LICENSE).

@@ -1,0 +1,38 @@
+{
+ "source": "OurAirports airports.csv (https://davidmegginson.github.io/ourairports-data/airports.csv)",
+ "license": "Public Domain",
+ "fetched_at": "2026-10-05",
+ "filter": "iso_country=IN and (type in large_airport,medium_airport or (small_airport with iata_code and scheduled_service=yes)); Delhi NCR bbox for sample",
+ "rows": [
+  {
+   "iata": null,
+   "icao": "VIDD",
+   "name": "Safdarjung Airport",
+   "city": "New Delhi",
+   "type": "medium",
+   "scheduled": false,
+   "lat": 28.58545,
+   "lng": 77.20356
+  },
+  {
+   "iata": "DEL",
+   "icao": "VIDP",
+   "name": "Indira Gandhi International Airport",
+   "city": "New Delhi",
+   "type": "large",
+   "scheduled": true,
+   "lat": 28.55563,
+   "lng": 77.09519
+  },
+  {
+   "iata": "HDO",
+   "icao": "VIDX",
+   "name": "Hindon Airport / Hindon Air Force Station",
+   "city": "Ghaziabad",
+   "type": "small",
+   "scheduled": true,
+   "lat": 28.7077,
+   "lng": 77.3589
+  }
+ ]
+}

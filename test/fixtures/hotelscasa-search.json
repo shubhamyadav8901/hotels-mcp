@@ -1,0 +1,113 @@
+{
+  "_fixture": "SYNTHETIC. Shape of CallToolResult from HotelsCasa search_hotels with dates (server hotelscasa-mcp v2.0.0, captured 2026-10-05). Names/keys/prices invented. content[1].text === JSON.stringify(structuredContent). Real response: 10 items, 20.9 KB.",
+  "_request": {
+    "name": "search_hotels",
+    "arguments": {
+      "lat": 28.643,
+      "lng": 77.2194,
+      "radius_km": 2,
+      "check_in": "2026-11-10",
+      "check_out": "2026-11-11",
+      "adults": 2,
+      "lang": "en"
+    }
+  },
+  "content": [
+    {
+      "type": "text",
+      "text": "3 hotels:\n1. Fixture Inn Paharganj (3★, Hotel, New Delhi) — €18.50 per night — room available for these dates — Room Only, free cancellation, Deluxe Double Room — 0.1 km away — https://hotelscasa.com/en/hotel/fixture-inn-paharganj-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp — hotel_key fixture-inn-paharganj-new-delhi\n2. Synthetic Lodge Ajmeri Gate (2★, Hotel, New Delhi) — €12.75 per night — room available for these dates — Room Only, non-refundable, Standard Twin — 0.2 km away — https://hotelscasa.com/en/hotel/synthetic-lodge-ajmeri-gate-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp — hotel_key synthetic-lodge-ajmeri-gate-new-delhi\n3. Testotel Central (4★, Hotel, New Delhi) — €64.10 per night — room available for these dates — Room Only, free cancellation, Executive King — 0.3 km away — https://hotelscasa.com/en/hotel/testotel-central-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp — hotel_key testotel-central-new-delhi"
+    },
+    {
+      "type": "text",
+      "text": "{\"adults\":2,\"availability_checked\":true,\"check_in\":\"2026-11-10\",\"check_out\":\"2026-11-11\",\"children\":0,\"count\":3,\"items\":[{\"hotel_key\":\"fixture-inn-paharganj-new-delhi\",\"name\":\"Fixture Inn Paharganj\",\"type\":\"Hotel\",\"stars\":3,\"rating_10\":7.8,\"reviews_count\":42,\"city\":\"New Delhi\",\"country\":\"IN\",\"lat\":28.6435,\"lng\":77.2175,\"distance_km\":0.1,\"photo_url\":\"https://static.cupid.travel/hotels/fixture_fixture-.jpg\",\"price_from_eur_per_night\":18.5,\"price_note\":\"Price checked live for these dates and occupancy: a room is available. Taxes and fees included; confirmed at booking.\",\"available\":true,\"price_eur_per_night\":18.5,\"price_total_eur\":18.5,\"nights\":1,\"currency\":\"EUR\",\"board\":\"Room Only\",\"room_name\":\"Deluxe Double Room\",\"refundable\":true,\"url\":\"https://hotelscasa.com/en/hotel/fixture-inn-paharganj-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp\"},{\"hotel_key\":\"synthetic-lodge-ajmeri-gate-new-delhi\",\"name\":\"Synthetic Lodge Ajmeri Gate\",\"type\":\"Hotel\",\"stars\":2,\"city\":\"New Delhi\",\"country\":\"IN\",\"lat\":28.6418,\"lng\":77.2201,\"distance_km\":0.2,\"photo_url\":\"https://static.cupid.travel/hotels/fixture_syntheti.jpg\",\"price_from_eur_per_night\":12.75,\"price_note\":\"Price checked live for these dates and occupancy: a room is available. Taxes and fees included; confirmed at booking.\",\"available\":true,\"price_eur_per_night\":12.75,\"price_total_eur\":12.75,\"nights\":1,\"currency\":\"EUR\",\"board\":\"Room Only\",\"room_name\":\"Standard Twin\",\"refundable\":false,\"url\":\"https://hotelscasa.com/en/hotel/synthetic-lodge-ajmeri-gate-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp\"},{\"hotel_key\":\"testotel-central-new-delhi\",\"name\":\"Testotel Central\",\"type\":\"Hotel\",\"stars\":4,\"rating_10\":8.6,\"reviews_count\":950,\"city\":\"New Delhi\",\"country\":\"IN\",\"lat\":28.6452,\"lng\":77.2168,\"distance_km\":0.3,\"photo_url\":\"https://static.cupid.travel/hotels/fixture_testotel.jpg\",\"price_from_eur_per_night\":64.1,\"price_note\":\"Price checked live for these dates and occupancy: a room is available. Taxes and fees included; confirmed at booking.\",\"available\":true,\"price_eur_per_night\":64.1,\"price_total_eur\":64.1,\"nights\":1,\"currency\":\"EUR\",\"board\":\"Room Only\",\"room_name\":\"Executive King\",\"refundable\":true,\"url\":\"https://hotelscasa.com/en/hotel/testotel-central-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp\"}],\"locale\":\"en\",\"next_page\":2,\"nights\":1,\"page\":1}"
+    }
+  ],
+  "structuredContent": {
+    "adults": 2,
+    "availability_checked": true,
+    "check_in": "2026-11-10",
+    "check_out": "2026-11-11",
+    "children": 0,
+    "count": 3,
+    "items": [
+      {
+        "hotel_key": "fixture-inn-paharganj-new-delhi",
+        "name": "Fixture Inn Paharganj",
+        "type": "Hotel",
+        "stars": 3,
+        "rating_10": 7.8,
+        "reviews_count": 42,
+        "city": "New Delhi",
+        "country": "IN",
+        "lat": 28.6435,
+        "lng": 77.2175,
+        "distance_km": 0.1,
+        "photo_url": "https://static.cupid.travel/hotels/fixture_fixture-.jpg",
+        "price_from_eur_per_night": 18.5,
+        "price_note": "Price checked live for these dates and occupancy: a room is available. Taxes and fees included; confirmed at booking.",
+        "available": true,
+        "price_eur_per_night": 18.5,
+        "price_total_eur": 18.5,
+        "nights": 1,
+        "currency": "EUR",
+        "board": "Room Only",
+        "room_name": "Deluxe Double Room",
+        "refundable": true,
+        "url": "https://hotelscasa.com/en/hotel/fixture-inn-paharganj-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp"
+      },
+      {
+        "hotel_key": "synthetic-lodge-ajmeri-gate-new-delhi",
+        "name": "Synthetic Lodge Ajmeri Gate",
+        "type": "Hotel",
+        "stars": 2,
+        "city": "New Delhi",
+        "country": "IN",
+        "lat": 28.6418,
+        "lng": 77.2201,
+        "distance_km": 0.2,
+        "photo_url": "https://static.cupid.travel/hotels/fixture_syntheti.jpg",
+        "price_from_eur_per_night": 12.75,
+        "price_note": "Price checked live for these dates and occupancy: a room is available. Taxes and fees included; confirmed at booking.",
+        "available": true,
+        "price_eur_per_night": 12.75,
+        "price_total_eur": 12.75,
+        "nights": 1,
+        "currency": "EUR",
+        "board": "Room Only",
+        "room_name": "Standard Twin",
+        "refundable": false,
+        "url": "https://hotelscasa.com/en/hotel/synthetic-lodge-ajmeri-gate-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp"
+      },
+      {
+        "hotel_key": "testotel-central-new-delhi",
+        "name": "Testotel Central",
+        "type": "Hotel",
+        "stars": 4,
+        "rating_10": 8.6,
+        "reviews_count": 950,
+        "city": "New Delhi",
+        "country": "IN",
+        "lat": 28.6452,
+        "lng": 77.2168,
+        "distance_km": 0.3,
+        "photo_url": "https://static.cupid.travel/hotels/fixture_testotel.jpg",
+        "price_from_eur_per_night": 64.1,
+        "price_note": "Price checked live for these dates and occupancy: a room is available. Taxes and fees included; confirmed at booking.",
+        "available": true,
+        "price_eur_per_night": 64.1,
+        "price_total_eur": 64.1,
+        "nights": 1,
+        "currency": "EUR",
+        "board": "Room Only",
+        "room_name": "Executive King",
+        "refundable": true,
+        "url": "https://hotelscasa.com/en/hotel/testotel-central-new-delhi/?adults=2&checkin=2026-11-10&checkout=2026-11-11&src=mcp"
+      }
+    ],
+    "locale": "en",
+    "next_page": 2,
+    "nights": 1,
+    "page": 1
+  },
+  "isError": false
+}

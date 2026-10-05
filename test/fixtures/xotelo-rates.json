@@ -1,0 +1,14 @@
+{
+  "error": null,
+  "result": {
+    "chk_in": "2026-11-10",
+    "chk_out": "2026-11-11",
+    "currency": "INR",
+    "rates": [
+      { "code": "BookingCom", "name": "Booking.com", "rate": 2100, "tax": null },
+      { "code": "Agoda", "name": "Agoda.com", "rate": 1985, "tax": null },
+      { "code": "Vio", "name": "Vio.com", "rate": 2450, "tax": null }
+    ]
+  },
+  "timestamp": 1791150000000
+}
