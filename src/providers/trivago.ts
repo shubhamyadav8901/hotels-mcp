@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { AppError, upstreamText } from "../core/errors.js";
 import { coverPoints, haversineKm } from "../core/geo.js";
-import { RATIO_MAX_GUESTS } from "../core/occupancy.js";
 import type { HotelCandidate, HotelSearchQuery } from "../core/types.js";
 import { parseAmount, parseUpstream } from "./shared.js";
 import type { HotelSearchProvider, ProviderInfo, SearchOutcome } from "./types.js";
@@ -11,9 +10,6 @@ export const TRIVAGO_URL = "https://mcp.trivago.com/mcp";
 // Read-only search tools only; trivago offers nothing else we call.
 export const TRIVAGO_TOOLS = ["trivago-accommodation-radius-search", "trivago-accommodation-search"] as const;
 export const TRIVAGO_TIMEOUT_MS = 15_000;
-/** Hotels per search whose missing 2-adult price is looked up by name (cheapest first), and the least time worth it. */
-const BASELINE_LOOKUPS = 15;
-const MIN_LOOKUP_MS = 2_000;
 
 export const TRIVAGO_INFO: ProviderInfo = {
   id: "trivago",
@@ -41,6 +37,8 @@ const Accommodation = z.object({
   review_rating: z.string().nullish(),
   review_count: z.string().nullish(),
   accommodation_url: z.string().nullish(),
+  top_amenities: z.string().nullish(),
+  distance: z.string().nullish(),
 });
 
 const Payload = z.union([
@@ -116,6 +114,7 @@ export function createTrivagoProvider(
         review_count: parseAmount(a.review_count),
         url: a.accommodation_url ?? null,
         fetched_at: fetchedAt,
+        ...details(a),
         prices:
           perNight === null && total === null
             ? []
@@ -181,83 +180,18 @@ export function createTrivagoProvider(
     // trivago returns ~25 hotels around one point with no radius control, so a wider circle is covered by
     // searching several points across it in parallel and keeping the hotels inside the circle.
     const points = coverPoints(q, q.radius_km);
-    const started = Date.now();
-    // For 3–4 guests trivago often prices two rooms under rooms=1 (its price then matches rooms=2; checked
-    // live 2026-10-05), and names no room. The same points searched for 2 adults give each hotel a baseline
-    // that tells a one-room price (an extra-guest charge) from a doubled one.
-    const guests = q.adults + (q.children_ages?.length ?? 0);
-    const wantsBaseline = guests > 2 && guests <= RATIO_MAX_GUESTS;
-    const run = (query: HotelSearchQuery) =>
-      Promise.allSettled(points.map((p) => withBudget(searchAround(p, query), pointBudgetMs)));
-    const [results, baseResults] = await Promise.all([
-      run(q),
-      wantsBaseline ? run({ ...q, adults: 2, children_ages: [] }) : Promise.resolve([]),
-    ]);
+    const results = await Promise.allSettled(
+      points.map((p) => withBudget(searchAround(p, q), pointBudgetMs)),
+    );
     const ok = results.filter((r): r is PromiseFulfilledResult<HotelCandidate[]> => r.status === "fulfilled");
     if (ok.length === 0) throw (results[0] as PromiseRejectedResult).reason;
     const byId = new Map<string, HotelCandidate>();
     for (const r of ok) for (const h of r.value) if (!byId.has(h.source_id)) byId.set(h.source_id, h);
-    // Each hotel's 2-adult offer, kept with its booking site: trivago shows only the cheapest site, which can
-    // change with the party size, and only the same site's prices compare.
-    const twoAdult = new Map<string, { seller: string | null; per_night: number }>();
-    const keep = (h: HotelCandidate) => {
-      const p = h.prices[0];
-      if (p && !twoAdult.has(h.source_id))
-        twoAdult.set(h.source_id, { seller: p.seller, per_night: p.per_night });
-    };
-    for (const r of baseResults) if (r.status === "fulfilled") r.value.forEach(keep);
-    const basePointsFailed = baseResults.filter((r) => r.status === "rejected").length;
-    // The 2-adult search ranks a different ~25 hotels per point, so many hotels miss their baseline. The
-    // cheapest of those (the ones a price sort would show first) are looked up by name for 2 adults, in
-    // whatever time is left of the point budget.
-    const remaining = pointBudgetMs - (Date.now() - started);
-    let lookupsFailed = 0;
-    let lookupsSkipped = false;
-    if (wantsBaseline && remaining < MIN_LOOKUP_MS) lookupsSkipped = true;
-    else if (wantsBaseline) {
-      const missing = [...byId.values()]
-        .filter((h) => h.prices[0] && !twoAdult.has(h.source_id) && haversineKm(q, h) <= q.radius_km)
-        .sort((a, b) => a.prices[0]!.per_night - b.prices[0]!.per_night)
-        .slice(0, BASELINE_LOOKUPS);
-      const pair = { ...q, adults: 2, children_ages: [] };
-      const found = await Promise.allSettled(
-        missing.map((h) => withBudget(lookup(h.source_id, h.name, undefined, pair), remaining)),
-      );
-      for (const r of found) {
-        if (r.status === "fulfilled") {
-          if (r.value) keep(r.value);
-        } else lookupsFailed++;
-      }
-    }
-    const hotels = [...byId.values()]
-      .filter((h) => haversineKm(q, h) <= q.radius_km)
-      .map((h) =>
-        wantsBaseline
-          ? {
-              ...h,
-              prices: h.prices.map((p) => {
-                const base = twoAdult.get(h.source_id);
-                return {
-                  ...p,
-                  two_adult_per_night: base && base.seller === p.seller ? base.per_night : null,
-                };
-              }),
-            }
-          : h,
-      );
+    const hotels = [...byId.values()].filter((h) => haversineKm(q, h) <= q.radius_km);
     const pts = points.length === 1 ? "1 point" : `${ok.length} of ${points.length} points across the radius`;
-    const priced = hotels.filter((h) => h.prices.length > 0);
-    const checked = priced.filter((h) => h.prices[0]!.two_adult_per_night != null).length;
     return {
       hotels,
-      coverage_note:
-        `about 25 hotels per point searched (trivago has no radius control); searched ${pts}` +
-        (wantsBaseline
-          ? `; same-site 2-adult prices found for ${checked} of ${priced.length} priced hotels, to spot two-room prices` +
-            (basePointsFailed ? ` (${basePointsFailed} 2-adult points failed)` : "") +
-            (lookupsFailed ? ` (${lookupsFailed} name lookups failed)` : "") +
-            (lookupsSkipped ? " (no time left for name lookups)" : "")
-          : ""),
+      coverage_note: `about 25 hotels per point searched (trivago has no radius control); searched ${pts}`,
     };
   }
 
@@ -267,6 +201,17 @@ export function createTrivagoProvider(
     searchWithCoverage,
     lookup,
   };
+}
+
+/** Amenities and area, only when trivago states them. */
+function details(a: z.infer<typeof Accommodation>): Pick<HotelCandidate, "amenities" | "area"> {
+  const amenities = (a.top_amenities ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  // `distance` reads like "Kochi, 6.0 km to City centre": the area is the part before the first comma.
+  const area = a.distance?.match(/^([^,]+),\s*[\d.]+\s*km\b/)?.[1]?.trim();
+  return { ...(amenities.length ? { amenities } : {}), ...(area ? { area } : {}) };
 }
 
 export function nightsBetween(checkIn: string, checkOut: string): number {

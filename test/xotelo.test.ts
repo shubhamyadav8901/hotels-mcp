@@ -186,6 +186,16 @@ describe("xotelo provider", () => {
     expect(hotels.map((h) => h.prices.length)).toEqual([3, 0, 0]);
     expect(hotels[2]!.rating_10).toBeNull(); // rating 0 = no reviews
     expect(hotels[2]!.review_count).toBeNull();
+    expect(hotels[0]).toMatchObject({
+      property_type: "Hotel",
+      typical_price: { min: 60, max: 120, currency: "USD" },
+    });
+    expect(hotels[1]).toMatchObject({
+      property_type: "Hostel",
+      typical_price: { min: 9, max: 25, currency: "USD" },
+    });
+    // No price range listed: no typical price.
+    expect(hotels[2]).not.toHaveProperty("typical_price");
   });
 
   it("returns hotels with prices: [] when Xotelo has no rates", async () => {
@@ -198,6 +208,21 @@ describe("xotelo provider", () => {
     const hotels = await xotelo.search(query);
     expect(hotels).toHaveLength(2);
     expect(hotels.every((h) => h.prices.length === 0)).toBe(true);
+  });
+
+  it("leaves property_type and typical_price out when the list item lacks them", async () => {
+    const list = fixture("xotelo-list.json") as { result: { list: Record<string, unknown>[] } };
+    const [first] = list.result.list;
+    const { xotelo } = make({
+      list: {
+        ...list,
+        result: { ...list.result, list: [{ ...first, accommodation_type: null, price_ranges: null }] },
+      },
+    });
+    const [hotel] = await xotelo.search(query);
+    expect(hotel).toBeDefined();
+    expect(hotel).not.toHaveProperty("property_type");
+    expect(hotel).not.toHaveProperty("typical_price");
   });
 
   it("adds a stated tax and marks the price as tax-inclusive", async () => {

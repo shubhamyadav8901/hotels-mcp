@@ -5,7 +5,6 @@ import { AppError } from "../core/errors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
 import type { HotelSearchDeps } from "../core/hotel-search.js";
 import { planStay, type StayRequest } from "../core/itinerary.js";
-import { ROOM_FIT_TEXT, ROOM_FITS, ROOM_STATUS_TEXT, ROOM_STATUSES } from "../core/occupancy.js";
 import {
   RETIRING_ROOM_INDICATIVE_PRICES,
   RETIRING_ROOM_PORTAL,
@@ -147,29 +146,12 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
                     per_night_inr: z
                       .number()
                       .nullable()
-                      .describe(
-                        "Per-night INR price the hotel is ranked by: its cheapest one-room price, else its cheapest price not known to be two rooms, else its cheapest.",
-                      ),
+                      .describe("Lowest per-night INR price across sources."),
                     seller: z
                       .string()
                       .nullable()
                       .describe(
                         "Booking site of per_night_inr; the source id when the source names no seller.",
-                      ),
-                    fit: z
-                      .enum(ROOM_FITS)
-                      .nullable()
-                      .describe(`Whether per_night_inr is ONE room for the whole party: ${ROOM_FIT_TEXT}`),
-                    room_status: z
-                      .enum(ROOM_STATUSES)
-                      .describe(
-                        `What the hotel's prices show about one room for the party: ${ROOM_STATUS_TEXT}`,
-                      ),
-                    cheaper_other_per_night_inr: z
-                      .number()
-                      .nullable()
-                      .describe(
-                        "A cheaper per-night INR price not known to be one room (possibly two rooms), when there is one.",
                       ),
                     minutes_from_arrival: z
                       .number()

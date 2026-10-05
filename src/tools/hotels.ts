@@ -4,59 +4,27 @@ import { AppError, toAppError } from "../core/errors.js";
 import { searchPlaceName, type Anchor, type Gazetteer } from "../core/anchors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
 import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/hotel-search.js";
-import {
-  FIT_BASES,
-  FIT_BASIS_TEXT,
-  ROOM_FIT_TEXT,
-  ROOM_FITS,
-  ROOM_STATUS_TEXT,
-  ROOM_STATUSES,
-} from "../core/occupancy.js";
 import { travelMatrix, type TravelDeps } from "../core/travel.js";
-import type { PriceQuote } from "../core/types.js";
 import { handle, readOnly } from "./common.js";
 import { minRatingField, pctTo10 } from "./filters.js";
 import { occupancyFields, occupancyNote, validateOccupancy } from "./occupancy.js";
 import { AnchorOut, pointFields } from "./points.js";
+import { SourceOut, sourcesOut } from "./source-out.js";
+
+/** Per source in a search result, to keep a page readable; get_hotel_rates lists every offer. */
+const SEARCH_OFFERS = 3;
+const SEARCH_AMENITIES = 6;
 
 /** Free-flow expressway speed, used only to decide how far to search for a drive-time limit. */
 const KM_PER_DRIVE_MINUTE = 1.5;
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
 
-const PriceOut = z.object({
-  per_night_inr: z
-    .number()
-    .nullable()
-    .describe("Per-night price converted to INR (null if no exchange rate)."),
-  per_night: z.number().describe("Per-night price in the source's original currency."),
-  currency: z.string().describe("ISO currency code of per_night, e.g. INR or USD."),
-  seller: z
-    .string()
-    .nullable()
-    .describe("Booking site the price is from, e.g. Booking.com (null when the source does not name one)."),
-  source: z.string().describe("Id of the data source that returned the price, e.g. trivago."),
-  includes_taxes: z
-    .boolean()
-    .nullable()
-    .describe("Whether the price includes taxes such as GST (null when the source does not say)."),
-  available: z
-    .boolean()
-    .nullable()
-    .describe("Whether the source reports the room as bookable for these dates (null when it does not say)."),
-  refundable: z
-    .boolean()
-    .nullable()
-    .describe("Whether the rate is refundable (null when the source does not say)."),
-  url: z.string().nullable().describe("Link to the offer or hotel page at the source, when given."),
-  room: z.string().nullable().describe("Room type as the source names it (null when it does not say)."),
-  fit: z.enum(ROOM_FITS).describe(`Whether this price is ONE room for the whole party: ${ROOM_FIT_TEXT}`),
-  fit_basis: z.enum(FIT_BASES).describe(FIT_BASIS_TEXT),
-  fit_note: z
-    .string()
-    .nullable()
-    .describe("The evidence behind fit in words (room name, ratio, what is unknown)."),
-  fetched_at: z.string().describe("ISO time the source returned this price."),
+const CheapestOut = z.object({
+  per_night_inr: z.number().nullable().describe("Per-night price in INR (null if no exchange rate)."),
+  source: z.string().describe("Source that quoted it; its section in sources has the details."),
+  seller: z.string().nullable().describe("Booking site of the price (null when the source names none)."),
+  url: z.string().nullable().describe("Link to the offer, when given."),
 });
 
 const HotelOut = z.object({
@@ -74,17 +42,14 @@ const HotelOut = z.object({
     .nullable()
     .describe("Guest review score on a 0–10 scale, from the source with the most reviews (null if unrated)."),
   review_count: z.number().nullable().describe("Number of guest reviews behind rating_10 (null if unknown)."),
-  cheapest: PriceOut.nullable().describe(
-    "Lowest available per-night price in INR across all sources, of any fit (may be two rooms; see fit); null when no source priced the hotel.",
+  cheapest: CheapestOut.nullable().describe(
+    "Lowest bookable per-night INR price across sources; null when no source priced the hotel.",
   ),
-  rank_price: PriceOut.nullable().describe(
-    "Price the hotel is ranked and filtered by, when it differs from cheapest: its cheapest one-room price, else its cheapest price not known to be two rooms (null when that is cheapest).",
-  ),
-  room_status: z
-    .enum(ROOM_STATUSES)
-    .describe(`What the hotel's prices show about one room for the party: ${ROOM_STATUS_TEXT}`),
-  price_count: z.number().describe("Number of prices found across all sources and sellers."),
-  sources: z.array(z.string()).describe("Ids of the sources that list this hotel."),
+  sources: z
+    .array(SourceOut)
+    .describe(
+      `Each source's own listing of this hotel (name, rating, details, link) with its offers, cheapest source first; up to ${SEARCH_OFFERS} offers per source here (get_hotel_rates lists all).`,
+    ),
 });
 
 const outputSchema = {
@@ -143,23 +108,6 @@ const outputSchema = {
   notes: z.array(z.string()).describe("Caveats about the results, sources and attribution."),
 };
 
-const priceOut = (p: PriceQuote): z.infer<typeof PriceOut> => ({
-  per_night_inr: p.per_night_inr,
-  per_night: p.per_night,
-  currency: p.currency,
-  seller: p.seller,
-  source: p.source,
-  includes_taxes: p.includes_taxes,
-  available: p.available,
-  refundable: p.refundable,
-  url: p.url,
-  room: p.room,
-  fit: p.fit ?? "unknown",
-  fit_basis: p.fit_basis ?? "none",
-  fit_note: p.fit_note ?? null,
-  fetched_at: p.fetched_at,
-});
-
 const hotelOut = (h: RankedHotel): z.infer<typeof HotelOut> => ({
   hotel_id: h.hotel_id,
   also_ids: h.also_ids,
@@ -170,12 +118,15 @@ const hotelOut = (h: RankedHotel): z.infer<typeof HotelOut> => ({
   stars: h.stars,
   rating_10: h.rating_10,
   review_count: h.review_count,
-  cheapest: h.cheapest ? priceOut(h.cheapest) : null,
-  // Only when it differs from cheapest (which may then be a two-room or unknown price).
-  rank_price: h.rank_price && h.rank_price !== h.cheapest ? priceOut(h.rank_price) : null,
-  room_status: h.room_status,
-  price_count: h.prices.length,
-  sources: h.sources,
+  cheapest: h.cheapest
+    ? {
+        per_night_inr: h.cheapest.per_night_inr,
+        source: h.cheapest.source,
+        seller: h.cheapest.seller,
+        url: h.cheapest.url,
+      }
+    : null,
+  sources: sourcesOut(h, h.prices, { maxOffers: SEARCH_OFFERS, maxAmenities: SEARCH_AMENITIES }),
 });
 
 export interface HotelToolDeps extends HotelSearchDeps {
@@ -193,20 +144,17 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
     {
       title: "Search hotels near a place",
       description:
-        "Finds hotels around a place in India for given dates, with live prices from several meta-search " +
-        "sources merged per hotel. The place is one of: lat+lng, an Indian Railways station code, an airport " +
-        "IATA code, or a place name. Returns each hotel's id, coordinates, straight-line distance, stars, " +
-        "guest rating and cheapest current price in INR (with original currency, seller, source and, where the " +
-        "source names it, the room type). Every source is asked for one room that fits the party, but most show " +
-        "only their cheapest offer, which for 3+ guests is often two rooms. Each price has fit (one_room, " +
-        "two_rooms or unknown) with its evidence, and each hotel has room_status and rank_price. Sorted " +
-        "by price, a hotel is ranked by its cheapest one-room price, else its cheapest price not known to be two " +
-        "rooms, and hotels priced only as two rooms come last; no hotel is left out for that, since a room for " +
-        "the party may exist at a higher price. get_hotel_rates with verify_room checks a shortlist. With " +
-        "max_drive_minutes, keeps only hotels within that drive time (OpenStreetMap routing with a traffic " +
-        "allowance) and adds drive_minutes. Results are paginated. Per-seller prices are in get_hotel_rates; " +
-        "times to other places are in compare_hotels. coverage reports what each source returned and what limited it " +
-        "(sources return limited pages, so the list is not exhaustive). Does not book.",
+        "Finds hotels around a place in India for given dates, with live prices from several sources " +
+        "(trivago, HotelsCasa, Google Hotels via SerpApi, Xotelo/TripAdvisor) merged per hotel. The place is " +
+        "lat+lng, an Indian Railways station code, an airport IATA code, or a place name. Each hotel has its " +
+        "distance, stars, best-supported guest rating and cheapest price in INR, and a section per source with " +
+        "that source's own name, rating, property type, amenities, link and offers (booking site, price, taxes, " +
+        "refundability, room and meals as the source names them). Every source is asked for one room for the " +
+        "party, and each quotes the offer it chooses. With max_drive_minutes, keeps only hotels within that " +
+        "drive time (OpenStreetMap routing with a traffic allowance) and adds drive_minutes. Results are " +
+        "paginated. Every offer per source is in get_hotel_rates; times to other places are in compare_hotels. " +
+        "coverage reports what each source returned and what limited it (sources return limited pages, so the " +
+        "list is not exhaustive). Does not book.",
       inputSchema: {
         ...pointFields,
         radius_km: z.number().min(0.2).max(25).default(3).describe("Search radius in km."),
@@ -367,15 +315,6 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         }
       }
 
-      const guests = a.adults + a.children_ages.length;
-      if (guests > 2 && ranked.length > 0) {
-        const count = (st: string) => ranked.filter((h) => h.room_status === st).length;
-        notes.push(
-          `Of ${ranked.length} hotels, ${count("one_room")} have a price known to be one room for ${guests}, ` +
-            `${count("two_rooms_only")} only prices known to be two rooms (a room for ${guests} may still exist at a higher price), ` +
-            `and ${count("unverified")} are unverified. get_hotel_rates with verify_room checks a hotel's rooms.`,
-        );
-      }
       const page = ranked.slice(a.offset, a.offset + a.limit);
       return {
         anchor: { ...anchorOut(anchor) },

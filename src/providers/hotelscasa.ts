@@ -28,6 +28,7 @@ export const HOTELSCASA_INFO: ProviderInfo = {
 const Item = z.object({
   hotel_key: z.string(),
   name: z.string(),
+  type: z.string().nullish(),
   lat: z.number(),
   lng: z.number(),
   stars: z.number().nullish(),
@@ -128,6 +129,26 @@ export function createHotelsCasaProvider(
   };
 }
 
+// HotelsCasa is a Spanish site: most types come in English ("Hotel", "Apartment"), but some categories leak
+// through in Spanish (live, Kochi 2026-10-06: "Posadas").
+const SPANISH_TYPES: Record<string, string> = {
+  hoteles: "Hotel",
+  posadas: "Inn",
+  hostales: "Hostel",
+  albergues: "Hostel",
+  apartamentos: "Apartment",
+  "casas de huéspedes": "Guest house",
+  pensiones: "Guest house",
+  villas: "Villa",
+  "casas rurales": "Country house",
+  moteles: "Motel",
+  campings: "Campsite",
+};
+
+export function propertyType(type: string): string {
+  return SPANISH_TYPES[type.trim().toLowerCase()] ?? type;
+}
+
 function toCandidate(it: z.infer<typeof Item>, live: boolean, fetchedAt: string): HotelCandidate {
   // Only prices checked live for the dates count; `price_from_eur_per_night` alone is an indicative "from" price.
   const perNight = live ? (it.price_eur_per_night ?? null) : null;
@@ -142,6 +163,7 @@ function toCandidate(it: z.infer<typeof Item>, live: boolean, fetchedAt: string)
     review_count: it.reviews_count ?? null,
     url: it.url ?? null,
     fetched_at: fetchedAt,
+    ...(it.type ? { property_type: propertyType(it.type) } : {}),
     prices:
       perNight === null
         ? []
@@ -158,7 +180,8 @@ function toCandidate(it: z.infer<typeof Item>, live: boolean, fetchedAt: string)
               available: it.available ?? null,
               refundable: it.refundable ?? null,
               url: it.url ?? null,
-              room: [it.room_name, it.board].filter(Boolean).join(", ") || null,
+              room: it.room_name || null,
+              ...(it.board ? { meal_plan: it.board } : {}),
               fetched_at: fetchedAt,
             },
           ],

@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Gazetteer } from "../core/anchors.js";
 import { AppError } from "../core/errors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
-import { rankPrice, ROOM_FIT_TEXT, ROOM_FITS } from "../core/occupancy.js";
+import { cheapest } from "../core/merge.js";
 import { travelMatrix, type LabelledPoint, type TravelDeps } from "../core/travel.js";
 import { handle, readOnly } from "./common.js";
 import { PointInput } from "./points.js";
@@ -93,7 +93,7 @@ export function registerTravelTools(
         "station, tomorrow's departure airport and attractions. Hotels are hotel_ids from search_hotels (which " +
         "also supplies their cheapest price) or name + lat/lng. Places are lat+lng, station code, IATA code or " +
         "place name. Returns, per hotel, the time and distance to every place, total minutes, the " +
-        "price the search that found it ranked it by (one room when known; with its source, fetch time and dates) and a rank by total " +
+        "cheapest price from the search that found it (with its source, fetch time and dates) and a rank by total " +
         "minutes. Does not fetch new prices; get_hotel_rates does.",
       inputSchema: {
         hotels: z.array(HotelRef).min(1).max(10).describe("Hotels to compare."),
@@ -128,9 +128,6 @@ export function registerTravelTools(
                       "Booking site the price is from; the source id when the source names no seller.",
                     ),
                   source: z.string().describe("Id of the data source that returned the price."),
-                  fit: z
-                    .enum(ROOM_FITS)
-                    .describe(`Whether this price is ONE room for the whole party: ${ROOM_FIT_TEXT}`),
                   fetched_at: z.string().describe("ISO time the source returned this price."),
                   check_in: z.string().describe("Check-in date of that search, YYYY-MM-DD."),
                   check_out: z.string().describe("Check-out date of that search, YYYY-MM-DD."),
@@ -139,7 +136,7 @@ export function registerTravelTools(
                 })
                 .nullable()
                 .describe(
-                  "Price the search ranked this hotel by (its cheapest one-room price when known), for that search's dates and party.",
+                  "Lowest per-night INR price across sources from that search, for its dates and party.",
                 ),
               total_minutes: z
                 .number()
@@ -159,7 +156,7 @@ export function registerTravelTools(
         if (h.hotel_id) {
           const known = deps.memory.get(h.hotel_id);
           if (known) {
-            const p = rankPrice(known.hotel.prices);
+            const p = cheapest(known.hotel.prices);
             return {
               id: h.hotel_id,
               name: known.hotel.name,
@@ -169,7 +166,6 @@ export function registerTravelTools(
                 per_night_inr: p.per_night_inr,
                 seller: p.seller ?? p.source,
                 source: p.source,
-                fit: p.fit ?? "unknown",
                 fetched_at: p.fetched_at,
                 check_in: known.check_in,
                 check_out: known.check_out,

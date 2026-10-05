@@ -3,110 +3,24 @@ import { z } from "zod";
 import type { Gazetteer } from "../core/anchors.js";
 import { AppError, toAppError } from "../core/errors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
-import {
-  searchHotels,
-  type HotelSearchDeps,
-  type RankedHotel,
-  type SourceFailure,
-} from "../core/hotel-search.js";
+import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/hotel-search.js";
 import { cheapest, isSameHotel, nameSimilarity } from "../core/merge.js";
-import {
-  CHEAPEST_OFFER_ONLY,
-  cheapestOneRoom,
-  rankPrice,
-  FIT_BASES,
-  FIT_BASIS_TEXT,
-  RATIO_MAX_GUESTS,
-  roomCapacity,
-  roomFit,
-  ROOM_FIT_TEXT,
-  ROOM_FITS,
-  ROOM_STATUS_TEXT,
-  ROOM_STATUSES,
-  roomStatus,
-} from "../core/occupancy.js";
-import type { PriceQuote } from "../core/types.js";
+import type { HotelCandidate, PriceQuote } from "../core/types.js";
 import { convertToInr } from "../providers/fx.js";
-import type { SerpApi } from "../providers/serpapi.js";
 import type { TrivagoProvider } from "../providers/trivago.js";
 import type { Xotelo } from "../providers/xotelo.js";
 import { handle, readOnly } from "./common.js";
+import { SourceOut, sourcesOut } from "./source-out.js";
 import { occupancyFields, occupancyNote, validateOccupancy } from "./occupancy.js";
 import { validateDates } from "./hotels.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
-
-/** Most room-list offers returned; Google's list for one hotel is usually far shorter. */
-const ROOM_LIST_MAX = 60;
-
-const RoomOfferOut = z.object({
-  seller: z.string().describe("Booking site offering the room, e.g. Booking.com or Agoda."),
-  room: z.string().describe("Room name as the booking site lists it on Google."),
-  guests: z
-    .number()
-    .nullable()
-    .describe(
-      "Guests the site states this rate is for (Booking.com and Agoda state it); null when the site does not state it, and then the price is for the 2 adults the list was fetched for.",
-    ),
-  per_night_inr: z
-    .number()
-    .nullable()
-    .describe("Per-night price in INR as Google lists it (null when Google gave it in another currency)."),
-  url: z.string().nullable().describe("Link to the offer on the booking site (null if Google gives none)."),
-});
-type RoomOffer = z.infer<typeof RoomOfferOut>;
-
-const QuoteOut = z.object({
-  seller: z
-    .string()
-    .describe("Booking site the price is from; the source id when the source names no seller."),
-  source: z.string().describe("Id of the data source that returned the price, e.g. trivago."),
-  per_night_inr: z
-    .number()
-    .nullable()
-    .describe("Per-night price converted to INR (null if no exchange rate)."),
-  per_night: z.number().describe("Per-night price in the source's original currency."),
-  currency: z.string().describe("ISO currency code of per_night and total, e.g. INR or USD."),
-  total: z
-    .number()
-    .nullable()
-    .describe("Price for the whole stay in the original currency (null when the source does not give it)."),
-  includes_taxes: z
-    .boolean()
-    .nullable()
-    .describe("Whether the price includes taxes such as GST (null when the source does not say)."),
-  available: z
-    .boolean()
-    .nullable()
-    .describe("Whether the source reports the room as bookable for these dates (null when it does not say)."),
-  refundable: z
-    .boolean()
-    .nullable()
-    .describe("Whether the rate is refundable (null when the source does not say)."),
-  url: z.string().nullable().describe("Link to the offer or hotel page at the source, when given."),
-  room: z.string().nullable().describe("Room type as the source names it (null when it does not say)."),
-  room_guests: z
-    .number()
-    .nullable()
-    .describe(
-      "Guests the booking site states this rate is for (Booking.com and Agoda in Google's room list); null otherwise.",
-    ),
-  fit: z.enum(ROOM_FITS).describe(`Whether this price is ONE room for the whole party: ${ROOM_FIT_TEXT}`),
-  fit_basis: z.enum(FIT_BASES).describe(FIT_BASIS_TEXT),
-  fit_note: z
-    .string()
-    .nullable()
-    .describe("The evidence behind fit in words (room name, ratio, what is unknown)."),
-  fetched_at: z.string().describe("ISO time the source returned this price."),
-});
 
 export interface RatesToolDeps {
   hotels: HotelSearchDeps;
   gazetteer: Gazetteer;
   xotelo: Pick<Xotelo, "rates" | "info">;
   trivago: Pick<TrivagoProvider, "lookup" | "info">;
-  /** Google's room list for one hotel; null without SerpApi. */
-  serp: Pick<SerpApi, "rooms" | "info"> | null;
   /** Called when an exchange-rate fetch fails during one request (set per request by the handler). */
   onFxError?: (e: AppError) => void;
   memory: HotelMemory;
@@ -122,12 +36,11 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
     {
       title: "Compare a hotel's prices across sites",
       description:
-        "Fetches current prices for one hotel from every source for the given dates and lists them per " +
-        "booking site (e.g. Booking.com, Agoda, Trip.com, MakeMyTrip, the hotel's own site), cheapest first, in " +
-        "INR with the original currency, tax status, availability, links and, where the source names it, the " +
-        'room type (e.g. "Family Room with 2 Double Beds"). The hotel is a hotel_id from ' +
-        "search_hotels or plan_stays, or a name with lat/lng. Each price has fit (one_room, two_rooms or unknown) " +
-        "with its evidence, and the hotel a room_status; verify_room gathers more room evidence. Does not book.",
+        "Fetches current prices for one hotel from every source for the given dates, grouped by source: each " +
+        "source's own name, rating, property type, amenities and link, with all its offers (booking site such " +
+        "as Booking.com, Agoda or MakeMyTrip; price in INR and the original currency; taxes; refundability; " +
+        "availability; room and meals as the source names them; link), cheapest first. The hotel is a hotel_id " +
+        "from search_hotels or plan_stays, or a name with lat/lng. Does not book.",
       inputSchema: {
         hotel_id: z
           .string()
@@ -139,15 +52,6 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         check_in: isoDate.describe("Check-in date, YYYY-MM-DD (IST)."),
         check_out: isoDate.describe("Check-out date, YYYY-MM-DD."),
         ...occupancyFields,
-        verify_room: z
-          .boolean()
-          .default(false)
-          .describe(
-            "For 3+ guests, gather room evidence: Google's room list for this hotel (1 SerpApi search from a " +
-              "monthly quota, when enabled), where Booking.com and Agoda state each rate's guests, so rooms for " +
-              "the party are found with prices and multi-room combos are named; and, for 3–4 guests, trivago's " +
-              "and Xotelo's 2-adult prices from the same booking sites, from which their prices' fit is re-labelled.",
-          ),
       },
       outputSchema: {
         hotel: z
@@ -176,34 +80,19 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           .describe("The hotel the prices are for, as the sources list it."),
         check_in: z.string().describe("Check-in date, YYYY-MM-DD."),
         check_out: z.string().describe("Check-out date, YYYY-MM-DD."),
-        prices: z
-          .array(QuoteOut)
+        sources: z
+          .array(SourceOut)
           .describe(
-            "One entry per offer (per source and seller; with verify_room, also each relevant room from Google's room list), cheapest per_night_inr first (unconverted prices last).",
+            "Each source's own listing of the hotel (name, rating, details, link) with all its offers, cheapest source first.",
           ),
-        room_list: z
-          .array(RoomOfferOut)
-          .nullable()
-          .describe(
-            `Every room offer on Google's page for this hotel (fetched for 2 adults; 1 SerpApi search), sorted by seller then per_night_inr, for judging rooms the fit rules don't recognise; at most ${ROOM_LIST_MAX} entries (notes say when more were cut); null when verify_room did not fetch it.`,
-          ),
-        room_status: z
-          .enum(ROOM_STATUSES)
-          .describe(`What the prices show about one room for the party: ${ROOM_STATUS_TEXT}`),
-        cheapest_one_room_inr: z
-          .number()
-          .nullable()
-          .describe("Lowest per_night_inr among prices that are one room for the party (null if none)."),
         cheapest_inr: z
           .number()
           .nullable()
-          .describe(
-            "Lowest per_night_inr among prices for the whole party, of any fit (null if none in INR).",
-          ),
+          .describe("Lowest bookable per_night_inr across all sources (null if none in INR)."),
         priciest_inr: z
           .number()
           .nullable()
-          .describe("Highest per_night_inr among prices (null if none in INR)."),
+          .describe("Highest per_night_inr across all sources (null if none in INR)."),
         sources_ok: z
           .array(z.string())
           .describe("Ids of the sources that answered the re-search near the hotel."),
@@ -215,10 +104,8 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
               message: z.string().describe("What went wrong."),
             }),
           )
-          .describe(
-            "Sources or lookups that did not answer, and why; verify_room:<source> marks a failed verification lookup.",
-          ),
-        notes: z.array(z.string()).describe("Caveats about the prices and the room evidence."),
+          .describe("Sources or lookups that did not answer, and why."),
+        notes: z.array(z.string()).describe("Caveats about the prices."),
       },
       annotations: readOnly("Compare a hotel's prices across sites"),
     },
@@ -228,7 +115,6 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       const rq: RatesToolDeps = { ...deps, onFxError: (e) => fxErrors.push(e) };
       validateDates(a.check_in, a.check_out, rq.now());
       validateOccupancy(a.adults, a.children_ages);
-      const guests = a.adults + a.children_ages.length;
       const remembered = a.hotel_id ? rq.memory.get(a.hotel_id) : undefined;
       const known = remembered?.hotel;
       if (a.hotel_id && !known && (a.lat === undefined || a.lng === undefined || !a.name)) {
@@ -254,22 +140,17 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       // costs about one source's response time instead of several in a row.
       const startIds = [target.hotel_id, ...target.also_ids].filter(Boolean);
       const tvId = startIds.find((id) => id.startsWith("trivago:"));
+      // Listings found by direct lookups, for their source's section when the re-search lacked them.
+      const lookupListings: HotelCandidate[] = [];
       const xoId = startIds.find((id) => id.startsWith("xotelo:"));
-      const wantsBaseline = a.verify_room && guests > 2 && guests <= RATIO_MAX_GUESTS;
       // Party lookups start early only for sources the earlier search had no price from (the re-search
       // usually returns the others); otherwise they run afterwards, and only if needed.
       const hadPrice = (src: string) => remembered?.hotel.prices.some((p) => p.source === src) ?? false;
       const tvParty =
-        tvId && !hadPrice("trivago") ? settle(trivagoQuotes(rq, tvId, target.name, partyQ)) : undefined;
+        tvId && !hadPrice("trivago")
+          ? settle(trivagoQuotes(rq, tvId, target.name, partyQ, (l) => lookupListings.push(l)))
+          : undefined;
       const xoParty = xoId && !hadPrice("xotelo") ? settle(xoteloQuotes(rq, xoId, partyQ)) : undefined;
-      const tvBase =
-        wantsBaseline && tvId
-          ? settle(trivagoQuotes(rq, tvId, target.name, { ...partyQ, adults: 2, children_ages: [] }))
-          : undefined;
-      const xoBase =
-        wantsBaseline && xoId
-          ? settle(xoteloQuotes(rq, xoId, { ...partyQ, adults: 2, children_ages: [] }))
-          : undefined;
 
       const r = await searchHotels(
         rq.hotels,
@@ -282,7 +163,6 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           hotel_name: target.name,
           place: rq.gazetteer.nearby(target).stations[0]?.name,
         },
-        // Every price is shown here, two-room ones labelled.
         { sort: "distance", include_unpriced: true },
       );
       // Same listing by id, else the nearest listing that looks like the same property.
@@ -310,8 +190,6 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           ...h,
           distance_km: 0,
           cheapest: cheapest(h.prices),
-          rank_price: rankPrice(h.prices),
-          room_status: roomStatus(h.prices),
         };
         fromSearch = true;
       }
@@ -369,7 +247,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           (id
             ? settle(
                 source === "trivago"
-                  ? trivagoQuotes(rq, id, target.name, partyQ)
+                  ? trivagoQuotes(rq, id, target.name, partyQ, (l) => lookupListings.push(l))
                   : xoteloQuotes(rq, id, partyQ),
               )
             : undefined);
@@ -406,197 +284,22 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         occupancyNote(a.adults, a.children_ages),
         "Meta-search prices can differ at checkout; includes_taxes=null means the source does not say whether GST is included.",
       ];
-      let room_list: RoomOffer[] | null = null;
-      if (a.verify_room && guests > 2) {
-        const failures: SourceFailure[] = [];
-        // Google's room list, fetched for 2 adults (the fullest list): Booking.com and Agoda state each rate's
-        // guests, so a room for the party is found with its price, and multi-room combos are named.
-        const token = [withIds.hotel_id, ...withIds.also_ids]
-          .find((id) => id.startsWith("serpapi:"))
-          ?.slice("serpapi:".length);
-        const serp = rq.serp;
-        if (!serp || !rq.hotels.registry.isEnabled(serp.info.id)) {
-          notes.push(
-            "verify_room: Google's room list needs SerpApi (SERPAPI_KEY with ENABLE_UNOFFICIAL_SOURCES), so only 2-adult price comparisons were made.",
-          );
-        } else if (!token) {
-          notes.push(
-            "verify_room: Google Hotels does not list this hotel, so its room list was not fetched.",
-          );
-        } else {
-          try {
-            const offers = await rq.hotels.registry.run(
-              serp.info.id,
-              () =>
-                serp.rooms(token, {
-                  check_in: a.check_in,
-                  check_out: a.check_out,
-                  adults: 2,
-                  hotel_name: target.name,
-                }),
-              rq.hotels.deadlineMs,
-            );
-            const fetchedAt = rq.now().toISOString();
-            const allRooms = offers
-              .map((o): RoomOffer => ({
-                seller: o.seller,
-                room: o.room,
-                guests: o.guests,
-                per_night_inr: o.currency === "INR" ? Math.round(o.per_night) : null,
-                url: o.url,
-              }))
-              .sort(
-                (x, y) =>
-                  x.seller.localeCompare(y.seller) ||
-                  // Prices not in INR last; Infinity - Infinity would be NaN.
-                  (x.per_night_inr ?? Number.MAX_VALUE) - (y.per_night_inr ?? Number.MAX_VALUE),
-              );
-            room_list = allRooms.slice(0, ROOM_LIST_MAX);
-            if (allRooms.length > ROOM_LIST_MAX)
-              notes.push(
-                `verify_room: room_list shows the first ${ROOM_LIST_MAX} of Google's ${allRooms.length} room offers (by seller, then price).`,
-              );
-            const fromRooms = offers
-              .map((o): PriceQuote => {
-                const q: PriceQuote = {
-                  source: "serpapi",
-                  seller: o.seller,
-                  per_night: o.per_night,
-                  total: null,
-                  currency: o.currency,
-                  per_night_inr: o.currency === "INR" ? Math.round(o.per_night) : null,
-                  includes_taxes: null,
-                  available: null,
-                  refundable: null,
-                  url: o.url,
-                  room: o.room,
-                  room_guests: o.guests,
-                  // Sites that don't state guests quote the list's 2 adults.
-                  ...(o.guests === null ? { priced_for_guests: 2 } : {}),
-                  fetched_at: fetchedAt,
-                };
-                return { ...q, ...roomFit(q, guests) };
-              })
-              // Keep the evidence about this party: rooms that fit it, rooms named as several, and named
-              // rooms that sleep it but were priced for 2. Rates for fewer guests say nothing.
-              .filter(
-                (q) =>
-                  q.fit !== "unknown" ||
-                  (q.fit_basis === "room_name" && q.room !== null && (roomCapacity(q.room) ?? 0) >= guests),
-              );
-            prices.push(...fromRooms);
-            const left =
-              rq.hotels.registry.status().find((x) => x.id === serp.info.id)?.quota_remaining ?? null;
-            notes.push(
-              offers.length === 0
-                ? "verify_room: Google listed no rooms for this hotel on these dates."
-                : `verify_room: Google's room list had ${offers.length} offers; ${fromRooms.length} say something about one room for ${guests} (added as source serpapi, seller = booking site); the rest are rates for fewer guests or unnamed rooms.`,
-              ...(left !== null
-                ? [
-                    `SerpApi searches left this month as counted since this server started (the SerpApi dashboard has the account's real count): ${left}.`,
-                  ]
-                : []),
-            );
-          } catch (err) {
-            const e = toAppError(err);
-            failures.push({ source: serp.info.id, code: e.code, message: e.message });
-          }
-        }
-
-        // trivago and Xotelo name no room: compare each price with the same booking site's 2-adult price.
-        const baseline = new Map<string, { inr: number; taxStated: boolean }>();
-        for (const [source, pending] of [
-          ["trivago", tvBase],
-          ["xotelo", xoBase],
-        ] as const) {
-          if (!pending) continue;
-          const res = await pending;
-          if ("error" in res) failures.push({ source, code: res.error.code, message: res.error.message });
-          else if (res.value.length === 0)
-            notes.push(`verify_room: ${source} did not return a 2-adult price for this hotel.`);
-          else
-            for (const q of res.value)
-              if (q.per_night_inr !== null)
-                baseline.set(baselineKey(source, q.seller), {
-                  inr: q.per_night_inr,
-                  taxStated: q.includes_taxes !== null,
-                });
-        }
-        // Only sources whose id wasn't known up front (rare) get a 2-adult re-search near the hotel; a
-        // preloaded lookup that failed or found nothing is final (no second, slower attempt).
-        const preloaded = new Set([...(tvBase ? ["trivago"] : []), ...(xoBase ? ["xotelo"] : [])]);
-        const missing = new Set(
-          prices.map((p) => p.source).filter((src) => CHEAPEST_OFFER_ONLY.has(src) && !preloaded.has(src)),
-        );
-        if (missing.size && guests <= RATIO_MAX_GUESTS) {
-          try {
-            const more = await twoAdultPrices(
-              rq,
-              { ...withIds, name: target.name },
-              a.check_in,
-              a.check_out,
-              missing,
-            );
-            for (const [k, v] of more.prices) baseline.set(k, v);
-            failures.push(...more.failures);
-          } catch (err) {
-            const e = toAppError(err);
-            failures.push({ source: "two_adult_search", code: e.code, message: e.message });
-          }
-        }
-        const notInr = prices.filter((p) => CHEAPEST_OFFER_ONLY.has(p.source) && p.currency !== "INR").length;
-        if (notInr > 0)
-          notes.push(
-            `verify_room: ${notInr} trivago/Xotelo prices are not in INR, so they were not compared.`,
-          );
-        for (let i = 0; i < prices.length; i++) {
-          const p = prices[i]!;
-          if (!CHEAPEST_OFFER_ONLY.has(p.source) || p.currency !== "INR") continue;
-          const base = baseline.get(baselineKey(p.source, p.seller));
-          // A price that states tax against one that doesn't could be off by GST (12–18%). Without a usable
-          // new baseline, keep the one the search attached.
-          const sameBasis = base && base.taxStated === (p.includes_taxes !== null);
-          const withBase = {
-            ...p,
-            two_adult_per_night: sameBasis ? base.inr : (p.two_adult_per_night ?? null),
-          };
-          prices[i] = { ...withBase, ...roomFit(withBase, guests) };
-        }
-        for (const f of failures) sources_failed.push({ ...f, source: `verify_room:${f.source}` });
-      }
-
       if (fxErrors[0])
         sources_failed.push({ source: "fx", code: fxErrors[0].code, message: fxErrors[0].message });
       const unconverted = prices.filter((p) => p.per_night_inr === null && p.currency !== "INR").length;
       if (unconverted > 0) {
         notes.push(
-          `${unconverted} prices could not be converted to INR (no exchange rate); they are listed last.`,
+          `${unconverted} prices could not be converted to INR (no exchange rate); they are listed last in their source.`,
         );
       }
 
-      const sorted = prices
-        .map((p) => ({
-          seller: p.seller ?? p.source,
-          source: p.source,
-          per_night_inr: p.per_night_inr,
-          per_night: p.per_night,
-          currency: p.currency,
-          total: p.total,
-          includes_taxes: p.includes_taxes,
-          available: p.available,
-          refundable: p.refundable,
-          url: p.url,
-          room: p.room,
-          room_guests: p.room_guests ?? null,
-          fit: p.fit ?? "unknown",
-          fit_basis: p.fit_basis ?? "none",
-          fit_note: p.fit_note ?? null,
-          fetched_at: p.fetched_at,
-        }))
-        .sort((x, y) => (x.per_night_inr ?? Infinity) - (y.per_night_inr ?? Infinity));
-      // Room-list prices quoted for fewer guests than the party are evidence, not the party's price.
+      const sources = sourcesOut(
+        // A direct lookup is fresher than the search's listing of the same source, so it comes first.
+        { ...identityHotel, listings: [...lookupListings, ...identityHotel.listings] },
+        prices,
+      );
       const inr = prices
-        .filter((p) => p.priced_for_guests === undefined || p.priced_for_guests >= guests)
+        .filter((p) => p.available !== false)
         .map((p) => p.per_night_inr)
         .filter((v): v is number => v !== null);
 
@@ -609,7 +312,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           children_ages: a.children_ages,
         });
       }
-      if (sorted.length === 0) notes.push("No source has a live price for this hotel on these dates.");
+      if (prices.length === 0) notes.push("No source has a live price for this hotel on these dates.");
       return {
         hotel: {
           hotel_id: identityHotel.hotel_id,
@@ -623,10 +326,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         },
         check_in: a.check_in,
         check_out: a.check_out,
-        prices: sorted,
-        room_list,
-        room_status: roomStatus(prices),
-        cheapest_one_room_inr: cheapestOneRoom(prices)?.per_night_inr ?? null,
+        sources,
         cheapest_inr: inr.length ? Math.min(...inr) : null,
         priciest_inr: inr.length ? Math.max(...inr) : null,
         sources_ok: r.sources_ok,
@@ -635,85 +335,6 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       };
     }),
   );
-}
-
-/** 2-adult prices are compared per source and booking site: trivago's cheapest site can change with the party. */
-function baselineKey(source: string, seller: string | null): string {
-  return `${source}|${seller ?? ""}`;
-}
-
-/** Each seller's 2-adult, one-room price for this hotel, from the given sources only ("source|seller" → INR). */
-async function twoAdultPrices(
-  deps: RatesToolDeps,
-  hotel: RankedHotel,
-  checkIn: string,
-  checkOut: string,
-  sources: Set<string>,
-): Promise<{ prices: Map<string, { inr: number; taxStated: boolean }>; failures: SourceFailure[] }> {
-  const ids = new Set([hotel.hotel_id, ...hotel.also_ids]);
-  const r = await searchHotels(
-    { ...deps.hotels, providers: deps.hotels.providers.filter((p) => sources.has(p.info.id)) },
-    {
-      lat: hotel.lat,
-      lng: hotel.lng,
-      radius_km: LOOKUP_RADIUS_KM,
-      check_in: checkIn,
-      check_out: checkOut,
-      adults: 2,
-    },
-    { sort: "distance", include_unpriced: true },
-  );
-  const failures = [...r.sources_failed];
-  const same =
-    r.hotels.find((h) => [h.hotel_id, ...h.also_ids].some((id) => ids.has(id))) ??
-    r.hotels.find((h) => isSameHotel(hotel, h));
-  const prices = new Map<string, { inr: number; taxStated: boolean }>();
-  const add = (p: PriceQuote) => {
-    if (p.per_night_inr !== null)
-      prices.set(baselineKey(p.source, p.seller), {
-        inr: p.per_night_inr,
-        taxStated: p.includes_taxes !== null,
-      });
-  };
-  // searchHotels has already converted these to INR.
-  (same?.prices ?? []).forEach(add);
-  const has = (source: string) => [...prices.keys()].some((k) => k.startsWith(`${source}|`));
-  // trivago's area search can leave the hotel out; look it up by name. A failure keeps the other baselines.
-  if (sources.has("trivago") && !has("trivago")) {
-    try {
-      const tvId = [hotel.hotel_id, ...hotel.also_ids].find((x) => x.startsWith("trivago:"));
-      const live = tvId
-        ? await trivagoQuotes(deps, tvId, hotel.name, {
-            check_in: checkIn,
-            check_out: checkOut,
-            adults: 2,
-            children_ages: [],
-          })
-        : [];
-      live.forEach(add);
-    } catch (err) {
-      const e = toAppError(err);
-      failures.push({ source: deps.trivago.info.id, code: e.code, message: e.message });
-    }
-  }
-  // Xotelo prices only the nearest hotels in a search; ask for this one directly if needed. A failure here
-  // keeps the other sources' baselines.
-  const xoteloId = [hotel.hotel_id, ...hotel.also_ids].find((id) => id.startsWith("xotelo:"));
-  if (sources.has("xotelo") && xoteloId && !has("xotelo")) {
-    try {
-      const live = await xoteloQuotes(deps, xoteloId, {
-        check_in: checkIn,
-        check_out: checkOut,
-        adults: 2,
-        children_ages: [],
-      });
-      live.forEach(add);
-    } catch (err) {
-      const e = toAppError(err);
-      failures.push({ source: deps.xotelo.info.id, code: e.code, message: e.message });
-    }
-  }
-  return { prices, failures };
 }
 
 type Settled<T> = { value: T } | { error: AppError };
@@ -728,18 +349,26 @@ function settle<T>(p: Promise<T>): Promise<Settled<T>> {
 
 type Stay = { check_in: string; check_out: string; adults: number; children_ages: number[] };
 
-/** trivago's prices for one hotel looked up by name and id-checked, labelled for the party; [] if not listed. */
-async function trivagoQuotes(deps: RatesToolDeps, id: string, name: string, q: Stay): Promise<PriceQuote[]> {
+/** trivago's prices for one hotel looked up by name and id-checked, in INR; [] if not listed. */
+async function trivagoQuotes(
+  deps: RatesToolDeps,
+  id: string,
+  name: string,
+  q: Stay,
+  onListing?: (listing: HotelCandidate) => void,
+): Promise<PriceQuote[]> {
   if (!deps.hotels.registry.isEnabled(deps.trivago.info.id)) return [];
   const found = await deps.hotels.registry.run(
     deps.trivago.info.id,
     () => deps.trivago.lookup(id.slice("trivago:".length), name, undefined, q),
     deps.hotels.deadlineMs,
   );
-  return labelled(deps, found?.prices ?? [], q);
+  // Its listing (name, rating, amenities, link) feeds the trivago section when the re-search lacked it.
+  if (found) onListing?.(found);
+  return withInr(deps, found?.prices ?? []);
 }
 
-/** Xotelo's per-site prices for one hotel by its key, labelled for the party; [] if disabled. */
+/** Xotelo's per-site prices for one hotel by its key, in INR; [] if disabled. */
 async function xoteloQuotes(deps: RatesToolDeps, id: string, q: Stay): Promise<PriceQuote[]> {
   if (!deps.hotels.registry.isEnabled(deps.xotelo.info.id)) return [];
   const quotes = await deps.hotels.registry.run(
@@ -747,12 +376,11 @@ async function xoteloQuotes(deps: RatesToolDeps, id: string, q: Stay): Promise<P
     () => deps.xotelo.rates(id.slice("xotelo:".length), q.check_in, q.check_out, q.adults, q.children_ages),
     deps.hotels.deadlineMs,
   );
-  return labelled(deps, quotes, q);
+  return withInr(deps, quotes);
 }
 
-/** INR conversion (non-INR converted, not dropped) and room-fit labels for directly fetched quotes. */
-async function labelled(deps: RatesToolDeps, quotes: PriceQuote[], q: Stay): Promise<PriceQuote[]> {
-  const guests = q.adults + q.children_ages.length;
+/** INR conversion (non-INR converted, not dropped) for directly fetched quotes. */
+async function withInr(deps: RatesToolDeps, quotes: PriceQuote[]): Promise<PriceQuote[]> {
   // A failed exchange-rate fetch leaves non-INR prices unconverted and is reported through onFxError.
   const fx = quotes.some((p) => p.currency !== "INR")
     ? await deps.hotels.fx.rates().catch((err: unknown) => {
@@ -763,7 +391,6 @@ async function labelled(deps: RatesToolDeps, quotes: PriceQuote[], q: Stay): Pro
   return quotes.map((p) => {
     const inr =
       p.currency === "INR" ? Math.round(p.per_night) : fx ? convertToInr(p.per_night, p.currency, fx) : null;
-    const priced = { ...p, per_night_inr: inr };
-    return { ...priced, ...roomFit(priced, guests) };
+    return { ...p, per_night_inr: inr };
   });
 }

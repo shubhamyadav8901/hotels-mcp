@@ -4,7 +4,6 @@ import type { HotelSearchProvider, SearchOutcome } from "../providers/types.js";
 import { toAppError } from "./errors.js";
 import { haversineKm, roundTo } from "./geo.js";
 import { cheapest, mergeCandidates, type MergedHotel } from "./merge.js";
-import { rankPrice, roomFit, roomStatus, type RoomStatus } from "./occupancy.js";
 import type { HotelCandidate, HotelSearchQuery, PriceQuote } from "./types.js";
 
 export type SortKey = "distance" | "price" | "rating";
@@ -29,9 +28,6 @@ export interface RankedHotel extends MergedHotel {
   distance_km: number;
   /** Lowest bookable price of any kind. */
   cheapest: PriceQuote | null;
-  /** Price the hotel is ranked and filtered by (see rankPrice). */
-  rank_price: PriceQuote | null;
-  room_status: RoomStatus;
 }
 
 export interface HotelSearchResult {
@@ -107,29 +103,18 @@ export async function searchHotels(
     }
   });
 
-  const { converted, fx } = await convertPrices(
-    deps,
-    candidates,
-    sources_failed,
-    q.adults + (q.children_ages?.length ?? 0),
-  );
+  const { converted, fx } = await convertPrices(deps, candidates, sources_failed);
   let hotels: RankedHotel[] = mergeCandidates(converted)
     .map((h) => ({
       ...h,
       distance_km: roundTo(haversineKm(q, h), 2),
       cheapest: cheapest(h.prices),
-      rank_price: rankPrice(h.prices),
-      room_status: roomStatus(h.prices),
     }))
     .filter((h) => h.distance_km <= q.radius_km);
 
   if (opts.max_price_inr !== undefined) {
     const max = opts.max_price_inr;
-    // Filter by the price the hotel is ranked by: one room when known, not a cheaper two-room price.
-    hotels = hotels.filter((h) => {
-      const p = h.rank_price;
-      return p !== null && (p.per_night_inr as number) <= max;
-    });
+    hotels = hotels.filter((h) => h.cheapest !== null && (h.cheapest.per_night_inr as number) <= max);
   }
   let unrated_hidden = 0;
   if (opts.min_rating_10 !== undefined) {
@@ -166,7 +151,6 @@ async function convertPrices(
   deps: HotelSearchDeps,
   candidates: HotelCandidate[],
   failures: SourceFailure[],
-  guests: number,
 ): Promise<{ converted: HotelCandidate[]; fx: FxRates | null }> {
   let fx: FxRates | null = null;
   if (candidates.some((c) => c.prices.some((p) => p.currency !== "INR"))) {
@@ -192,19 +176,16 @@ async function convertPrices(
   };
   const converted = candidates.map((c) => ({
     ...c,
-    prices: c.prices.map((p) => ({ ...p, per_night_inr: toInr(p), ...roomFit(p, guests) })),
+    prices: c.prices.map((p) => ({ ...p, per_night_inr: toInr(p) })),
   }));
   return { converted, fx };
 }
 
 export function comparator(sort: SortKey): (a: RankedHotel, b: RankedHotel) => number {
-  const price = (h: RankedHotel) => h.rank_price?.per_night_inr ?? Number.POSITIVE_INFINITY;
-  // By price, hotels priced only as two rooms come after the rest: their price is not for one room.
-  const twoRoomsLast = (h: RankedHotel) => (h.room_status === "two_rooms_only" ? 1 : 0);
+  const price = (h: RankedHotel) => h.cheapest?.per_night_inr ?? Number.POSITIVE_INFINITY;
   switch (sort) {
     case "price":
-      return (a, b) =>
-        twoRoomsLast(a) - twoRoomsLast(b) || price(a) - price(b) || a.distance_km - b.distance_km;
+      return (a, b) => price(a) - price(b) || a.distance_km - b.distance_km;
     case "rating":
       return (a, b) => (b.rating_10 ?? -1) - (a.rating_10 ?? -1) || a.distance_km - b.distance_km;
     case "distance":

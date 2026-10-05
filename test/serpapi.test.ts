@@ -87,6 +87,49 @@ describe("serpapi provider", () => {
     expect(hotels[1]!.rating_10).toBe(7.6);
   });
 
+  it("maps property type, amenities and check-in/out times only when Google states them", async () => {
+    const { serp } = make();
+    const [palace, residency] = await serp.search(query);
+    expect(palace).toMatchObject({
+      property_type: "hotel",
+      amenities: ["Free Wi-Fi", "Air conditioning", "Restaurant"],
+      check_in_time: "2:00 PM",
+      check_out_time: "11:00 AM",
+    });
+    expect(residency!.property_type).toBe("hotel");
+    for (const field of ["amenities", "check_in_time", "check_out_time"]) {
+      expect(residency).not.toHaveProperty(field);
+    }
+  });
+
+  it("marks a price tax-inclusive only when Google's before-taxes figure is lower", async () => {
+    const rate = (lowest: number, before?: number) => ({
+      extracted_lowest: lowest,
+      ...(before === undefined ? {} : { extracted_before_taxes_fees: before }),
+    });
+    const prop = (name: string, r: ReturnType<typeof rate>, lng: number) => ({
+      type: "hotel",
+      name,
+      property_token: name,
+      gps_coordinates: { latitude: 28.643, longitude: lng },
+      rate_per_night: r,
+    });
+    const { serp } = make({
+      properties: [
+        prop("Taxed Testotel", rate(2100, 2000), 77.2194),
+        // Equal figures: Google shows no tax breakdown, so whether taxes are included is unknown.
+        prop("Equal Testotel", rate(2000, 2000), 77.2195),
+        prop("Bare Testotel", rate(2000), 77.2196),
+      ],
+    });
+    const hotels = await serp.search(query);
+    expect(hotels.map((h) => [h.name, h.prices[0]?.includes_taxes])).toEqual([
+      ["Taxed Testotel", true],
+      ["Equal Testotel", null],
+      ["Bare Testotel", null],
+    ]);
+  });
+
   it("caches a search for 24 h by rounded point, dates and adults", async () => {
     const { serp, urls, setTime } = make();
     await serp.search(query);

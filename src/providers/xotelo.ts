@@ -4,7 +4,6 @@ import { gunzipSync } from "node:zlib";
 import { z } from "zod";
 import { AppError, upstreamText } from "../core/errors.js";
 import { haversineKm } from "../core/geo.js";
-import { RATIO_MAX_GUESTS } from "../core/occupancy.js";
 import type { HotelCandidate, HotelSearchQuery, LatLng, PriceQuote } from "../core/types.js";
 import { DEFAULT_DATA_DIR } from "../data/datasets.js";
 import { TtlCache } from "../lib/cache.js";
@@ -344,26 +343,6 @@ export function createXotelo(opts: XoteloOptions) {
     }));
   }
 
-  /**
-   * Adds each seller's 2-adult price (when it was fetched) to that seller's quote, only when both state tax
-   * the same way: a price with GST against one without would be off by 12–18%.
-   */
-  function withBaseline(
-    quotes: PriceQuote[],
-    base: PromiseSettledResult<RateRow[]> | undefined,
-  ): PriceQuote[] {
-    if (!base) return quotes;
-    const bySeller = new Map(base.status === "fulfilled" ? base.value.map((r) => [r.name, r]) : []);
-    return quotes.map((q) => {
-      const r = bySeller.get(q.seller ?? "");
-      const sameTaxBasis = r !== undefined && (r.tax === null) === (q.includes_taxes === null);
-      return {
-        ...q,
-        two_adult_per_night: r && sameTaxBasis ? (r.tax === null ? r.rate : r.rate + r.tax) : null,
-      };
-    });
-  }
-
   /** Per-OTA prices for one hotel (`hotel_key` such as `g304551-d495582`; only the `d` part matters). */
   async function rates(
     hotelKey: string,
@@ -417,22 +396,11 @@ export function createXotelo(opts: XoteloOptions) {
 
     const hotels = [...byId.values()].sort((a, b) => a.km - b.km);
     const priced = hotels.slice(0, ratesForNearest);
-    // For 3–4 guests, each seller's 2-adult price tells a one-room price from a two-room one (Xotelo, like
-    // trivago, can price two rooms under rooms=1). Both sets are requested in one pass: throttle slots are
-    // booked in call order, so the party's own rates get the earlier ones, and a 2-adult request that can't
-    // start in time is skipped (its prices stay unknown) without delaying them.
-    const guests = q.adults + (q.children_ages?.length ?? 0);
-    const wantsBaseline = guests > 2 && guests <= RATIO_MAX_GUESTS;
-    const partyRates = priced.map((h) =>
-      fetchRates(h.hotelKey, q.check_in, q.check_out, q.adults, q.children_ages, latestStart),
+    const rateResults = await Promise.allSettled(
+      priced.map((h) =>
+        fetchRates(h.hotelKey, q.check_in, q.check_out, q.adults, q.children_ages, latestStart),
+      ),
     );
-    const twoAdultRates = wantsBaseline
-      ? priced.map((h) => fetchRates(h.hotelKey, q.check_in, q.check_out, 2, [], latestStart))
-      : [];
-    const [rateResults, baseResults] = await Promise.all([
-      Promise.allSettled(partyRates),
-      Promise.allSettled(twoAdultRates),
-    ]);
     const failed = rateResults.filter((r) => r.status === "rejected");
     if (priced.length > 0 && failed.length === priced.length)
       throw (failed[0] as PromiseRejectedResult).reason;
@@ -440,16 +408,10 @@ export function createXotelo(opts: XoteloOptions) {
     const fetchedAt = new Date(now()).toISOString();
     const busy = failed.filter((r) => (r as PromiseRejectedResult).reason?.code === "RATE_LIMITED").length;
     const pricedOk = priced.length - failed.length;
-    const checked = baseResults.filter(
-      (r, i) => r.status === "fulfilled" && r.value.length > 0 && rateResults[i]!.status === "fulfilled",
-    ).length;
     const coverage_note =
       `${hotels.length} listed within the radius; prices fetched for the ${pricedOk} nearest` +
       (busy ? ` (${busy} more skipped: Xotelo busy)` : "") +
-      ` — Xotelo is rate-limited, so only the ${ratesForNearest} nearest are priced` +
-      (wantsBaseline && pricedOk
-        ? `; 2-adult prices found for ${checked} of them, to spot two-room prices`
-        : "");
+      ` — Xotelo is rate-limited, so only the ${ratesForNearest} nearest are priced`;
     const candidates = hotels.map((h, i): HotelCandidate => {
       const r = rateResults[i];
       const rating = h.item.review_summary?.rating;
@@ -465,8 +427,10 @@ export function createXotelo(opts: XoteloOptions) {
         rating_10: rating ? Math.round(rating * 20) / 10 : null,
         review_count: count ? count : null,
         url: h.item.url ?? null,
-        prices: r?.status === "fulfilled" ? withBaseline(toQuotes(r.value, fetchedAt), baseResults[i]) : [],
+        prices: r?.status === "fulfilled" ? toQuotes(r.value, fetchedAt) : [],
         fetched_at: fetchedAt,
+        ...(h.item.accommodation_type ? { property_type: h.item.accommodation_type } : {}),
+        ...typicalPrice(h.item),
       };
     });
     return { hotels: candidates, coverage_note };
@@ -480,6 +444,18 @@ export function createXotelo(opts: XoteloOptions) {
     rates,
   };
   return provider;
+}
+
+/**
+ * TripAdvisor's usual nightly range. `/list` takes no currency and states none; Xotelo prices default to USD
+ * (its docs) and live ranges match USD (e.g. 122–281 for a 5-star Kochi hotel), so USD is assumed.
+ */
+function typicalPrice(item: XoteloListItem): Pick<HotelCandidate, "typical_price"> {
+  const min = item.price_ranges?.minimum;
+  const max = item.price_ranges?.maximum;
+  return min != null && max != null && min > 0 && max >= min
+    ? { typical_price: { min, max, currency: "USD" } }
+    : {};
 }
 
 export type Xotelo = ReturnType<typeof createXotelo>;

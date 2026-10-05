@@ -25,8 +25,6 @@ const ConfigSchema = z.object({
   SERPAPI_KEY: optionalString,
   /** Google Hotels pages per area search (1–5, ~20 hotels each); every page costs one SerpApi search. */
   SERPAPI_MAX_PAGES: z.coerce.number().int().min(1).max(5).default(1),
-  /** Uncached Google room-list lookups (get_hotel_rates verify_room) per rolling hour, one SerpApi search each; 0 = unlimited. */
-  SERPAPI_ROOMS_PER_HOUR: z.coerce.number().int().min(0).max(1000).default(8),
   /** Writable directory for small state files (the SerpApi monthly search count); the Docker image uses /data/state. */
   STATE_DIR: z
     .string()

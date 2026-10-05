@@ -6,7 +6,7 @@ import { FX_INFO } from "../src/providers/fx.js";
 import { ProviderRegistry } from "../src/providers/registry.js";
 import type { HotelSearchProvider } from "../src/providers/types.js";
 import { XOTELO_INFO } from "../src/providers/xotelo.js";
-import { connect, testDeps } from "./helpers.js";
+import { connect, testDeps, offers } from "./helpers.js";
 
 const T = "2026-10-05T10:00:00.000Z";
 const q = (source: string, seller: string | null, per_night: number, currency = "INR"): PriceQuote => ({
@@ -86,7 +86,7 @@ describe("get_hotel_rates", () => {
     expect(r.isError).toBeFalsy();
     const out = r.structuredContent as Out;
     expect(out.hotel.hotel_id).toBe("trivago:t1");
-    expect(out.prices.map((p) => [p.seller, p.per_night_inr])).toEqual([
+    expect(offers(out).map((p) => [p.seller, p.per_night_inr])).toEqual([
       ["hotelscasa", 2500],
       ["MakeMyTrip", 3100],
     ]);
@@ -104,7 +104,7 @@ describe("get_hotel_rates", () => {
       arguments: { name: "Sunrise Residency", lat: 28.6435, lng: 77.2175, ...dates },
     });
     expect(xoteloRates).toHaveBeenCalledWith("g304551-d123", "2026-11-10", "2026-11-11", 2, []);
-    expect((r.structuredContent as Out).prices.map((p) => p.seller)).toEqual(["Trip.com", "Agoda"]);
+    expect(offers(r.structuredContent).map((p) => p.seller)).toEqual(["Trip.com", "Agoda"]);
   });
 
   it("keeps other sources' prices and reports a failing Xotelo lookup", async () => {
@@ -123,7 +123,7 @@ describe("get_hotel_rates", () => {
       arguments: { name: "Sunrise Residency", lat: 28.6435, lng: 77.2175, ...dates },
     });
     const out = r.structuredContent as Out;
-    expect(out.prices).toHaveLength(1);
+    expect(offers(out)).toHaveLength(1);
     expect(out.sources_failed).toEqual([expect.objectContaining({ source: "xotelo" })]);
   });
 

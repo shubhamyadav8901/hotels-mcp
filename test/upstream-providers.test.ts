@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { HotelSearchQuery } from "../src/core/types.js";
-import { createHotelsCasaProvider } from "../src/providers/hotelscasa.js";
+import { createHotelsCasaProvider, propertyType } from "../src/providers/hotelscasa.js";
 import { parseAmount } from "../src/providers/shared.js";
 import { createTrivagoProvider, nightsBetween } from "../src/providers/trivago.js";
 import type { UpstreamResult } from "../src/providers/upstream-mcp.js";
@@ -62,6 +62,30 @@ describe("trivago provider", () => {
     expect(JSON.stringify(hotels)).not.toMatch(/system_message|IMPORTANT|main_image|base64/);
   });
 
+  it("maps top_amenities to a list and the distance's place to area, only when stated", async () => {
+    const base = fixture("trivago-radius-search.json") as {
+      structuredContent: { accommodations: Record<string, unknown>[] };
+    };
+    const [a, b, c] = base.structuredContent.accommodations;
+    const accommodations = [
+      a,
+      { ...b, top_amenities: null, distance: "3.0 km to City centre" },
+      { ...c, top_amenities: " , ", distance: undefined },
+    ];
+    const call = vi.fn().mockResolvedValue({ structuredContent: { accommodations } });
+    const hotels = await createTrivagoProvider(call, NOW).search({ ...query, radius_km: 50 });
+    const byId = new Map(hotels.map((h) => [h.source_id, h]));
+
+    expect(byId.get("a1b2c3d4e5f6")).toMatchObject({
+      amenities: ["WiFi in lobby", "WiFi in rooms", "A/C", "Restaurant"],
+      area: "Delhi",
+    });
+    for (const id of ["0f9e8d7c6b5a", "123abc456def"]) {
+      expect(byId.get(id)).not.toHaveProperty("amenities");
+      expect(byId.get(id)).not.toHaveProperty("area");
+    }
+  });
+
   it("drops hotels outside the requested radius (trivago has no radius parameter)", async () => {
     const call = vi.fn().mockResolvedValue(fixture("trivago-radius-search.json"));
     const all = await createTrivagoProvider(call, NOW).search({ ...query, radius_km: 50 });
@@ -111,6 +135,22 @@ describe("HotelsCasa provider", () => {
     });
   });
 
+  it("maps type to property_type and keeps the room name and board apart", async () => {
+    const base = fixture("hotelscasa-search.json") as {
+      structuredContent: { items: Record<string, unknown>[] } & Record<string, unknown>;
+    };
+    const [a, b] = base.structuredContent.items;
+    const items = [a, { ...b, type: null, board: null }];
+    const call = vi.fn().mockResolvedValue({ structuredContent: { ...base.structuredContent, items } });
+    const [first, second] = await createHotelsCasaProvider(call, { now: NOW }).search(query);
+
+    expect(first?.property_type).toBe("Hotel");
+    expect(first?.prices[0]).toMatchObject({ room: "Deluxe Double Room", meal_plan: "Room Only" });
+    expect(second).not.toHaveProperty("property_type");
+    expect(second?.prices[0]?.room).toBe("Standard Twin");
+    expect(second?.prices[0]).not.toHaveProperty("meal_plan");
+  });
+
   it("caps the radius at 50 km and stops paging on a short page", async () => {
     const call = vi.fn().mockResolvedValue(fixture("hotelscasa-search.json"));
     await createHotelsCasaProvider(call, { maxPages: 3, now: NOW }).search({ ...query, radius_km: 80 });
@@ -123,6 +163,15 @@ describe("HotelsCasa provider", () => {
     await expect(createHotelsCasaProvider(call, { now: NOW }).search(query)).rejects.toMatchObject({
       code: "UPSTREAM_UNAVAILABLE",
     });
+  });
+});
+
+describe("HotelsCasa property types", () => {
+  it("translates the Spanish category names that leak through and keeps English ones", () => {
+    expect(propertyType("Posadas")).toBe("Inn");
+    expect(propertyType("Casas de huéspedes")).toBe("Guest house");
+    expect(propertyType("Hotel")).toBe("Hotel");
+    expect(propertyType("Bed and breakfast")).toBe("Bed and breakfast");
   });
 });
 
@@ -180,7 +229,7 @@ describe("HotelsCasa room names", () => {
   it("passes the room name and board through with the price", async () => {
     const call = vi.fn().mockResolvedValue(fixture("hotelscasa-search.json"));
     const [first] = await createHotelsCasaProvider(call, { now: NOW }).search(query);
-    expect(first?.prices[0]?.room).toBe("Deluxe Double Room, Room Only");
+    expect(first?.prices[0]).toMatchObject({ room: "Deluxe Double Room", meal_plan: "Room Only" });
   });
 });
 

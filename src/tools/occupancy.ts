@@ -28,11 +28,8 @@ export function validateOccupancy(adults: number, childrenAges: readonly number[
 }
 
 export function occupancyNote(adults: number, childrenAges: readonly number[]): string {
-  const kids = childrenAges.length
-    ? ` and ${childrenAges.length} child${childrenAges.length > 1 ? "ren" : ""} (ages ${childrenAges.join(", ")})`
-    : "";
   const xotelo = childrenAges.length
     ? ` Xotelo cannot price children, so its prices are for ${adults + childrenAges.length} adults.`
     : "";
-  return `Every source was asked for one room for ${adults} adult${adults > 1 ? "s" : ""}${kids}; each price's fit says whether it is one room.${xotelo}`;
+  return `Prices are each source's offer for this party; the room is the source's choice, so check it on the booking site.${xotelo}`;
 }

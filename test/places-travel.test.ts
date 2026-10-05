@@ -232,6 +232,7 @@ describe("travel tools over MCP", () => {
           rating_10: 8,
           review_count: 10,
           sources: ["trivago", "hotelscasa"],
+          listings: [],
           prices: [
             {
               source: "hotelscasa",

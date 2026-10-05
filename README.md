@@ -20,16 +20,16 @@ datetimes.
 Full input and output schemas for every tool: [docs/tools.md](docs/tools.md) (generated from the server's
 `tools/list`; `npm run docs:tools` regenerates it and CI fails if it is out of date).
 
-| Tool                  | What it does                                                                                                                                                                                                            |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `resolve_place`       | Name or code → coordinates (stations, airports, bus stations, landmarks, localities); or coordinates → nearest stations, airports and bus stations                                                                      |
-| `search_hotels`       | Hotels in or near a place for given dates, merged across sources, cheapest live price in INR for one room that fits the party (`adults`, `children_ages`); sort by price, rating or distance; optional drive-time limit |
-| `get_hotel_rates`     | One hotel's current prices per booking site (Booking.com, Agoda, Trip.com, MakeMyTrip, …), cheapest first, in INR, with tax status and links                                                                            |
-| `compare_hotels`      | Up to 10 hotels × up to 6 labelled places: drive or walk times, totals, ranking                                                                                                                                         |
-| `travel_times`        | Origin × destination matrix of road km, free-flow and traffic-adjusted minutes                                                                                                                                          |
-| `plan_stays`          | Per-stop stay planning from arrival/departure times: dates, candidates ranked by price + transfer time, leave-by times, warnings, retiring rooms                                                                        |
-| `find_retiring_rooms` | IRCTC railway retiring rooms at or near a station, with booking rules and portal link                                                                                                                                   |
-| `get_data_sources`    | Status, limitations and quotas of every source; bundled dataset dates and licences                                                                                                                                      |
+| Tool                  | What it does                                                                                                                                                                                                                                                                              |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolve_place`       | Name or code → coordinates (stations, airports, bus stations, landmarks, localities); or coordinates → nearest stations, airports and bus stations                                                                                                                                        |
+| `search_hotels`       | Hotels in or near a place for given dates, merged across sources, with a section per source (its own name, rating, amenities, link and offers) and the cheapest live price in INR for the party (`adults`, `children_ages`); sort by price, rating or distance; optional drive-time limit |
+| `get_hotel_rates`     | One hotel's current offers from every source, grouped by source, each per booking site (Booking.com, Agoda, Trip.com, MakeMyTrip, …), cheapest first, in INR, with tax status, room, meals and links                                                                                      |
+| `compare_hotels`      | Up to 10 hotels × up to 6 labelled places: drive or walk times, totals, ranking                                                                                                                                                                                                           |
+| `travel_times`        | Origin × destination matrix of road km, free-flow and traffic-adjusted minutes                                                                                                                                                                                                            |
+| `plan_stays`          | Per-stop stay planning from arrival/departure times: dates, candidates ranked by price + transfer time, leave-by times, warnings, retiring rooms                                                                                                                                          |
+| `find_retiring_rooms` | IRCTC railway retiring rooms at or near a station, with booking rules and portal link                                                                                                                                                                                                     |
+| `get_data_sources`    | Status, limitations and quotas of every source; bundled dataset dates and licences                                                                                                                                                                                                        |
 
 All tools are read-only; nothing books, pays or cancels.
 
@@ -131,8 +131,7 @@ See `.env.example`. Main settings: `HTTP_USER_AGENT`, `SERPAPI_KEY` (optional), 
 `NOMINATIM_URL`, `PHOTON_URL`, `METRO_TRAFFIC_MULTIPLIER`, `OTHER_TRAFFIC_MULTIPLIER`, `TRAIN_BUFFER_MIN`
 (default 30), `FLIGHT_BUFFER_MIN` (default 120), `DEFAULT_MIN_RATING_PCT` (default 0 = off; default for the
 `min_rating_pct` filter, which the agent can override per request), `PROVIDER_DEADLINE_MS` (default 20000; each source's time
-limit per search), `SERPAPI_MAX_PAGES` (default 1), `SERPAPI_ROOMS_PER_HOUR` (default 8, 0 = unlimited; uncached Google
-room-list lookups by `verify_room`, to save the SerpApi quota) and `STATE_DIR` (default `~/.cache/india-hotels-mcp`;
+limit per search), `SERPAPI_MAX_PAGES` (default 1) and `STATE_DIR` (default `~/.cache/india-hotels-mcp`;
 holds the SerpApi monthly search count so it survives restarts; docker compose keeps it in the `hotels-state` volume).
 
 HTTP mode only: `PORT` (default 3001), `HOST` (bind address, default `127.0.0.1`; `0.0.0.0` in the Docker
@@ -140,9 +139,9 @@ image) and `ALLOWED_HOSTS` (comma-separated extra hostnames accepted in the `Hos
 `localhost`, `127.0.0.1` and `[::1]` are always accepted). Under docker compose, `PORT` and `HOST` are fixed by
 `docker-compose.yml`.
 
-Searches are for **one room that fits the whole party**: `adults` (1–8) plus `children_ages` (up to 4 children,
-ages 0–17), at most 8 guests. Every source is asked for that occupancy, but most return only their cheapest offer,
-which for 3+ guests is often two rooms (see "One room, really?" below). Xotelo cannot price children, so it counts them as adults. With `sort=price`, Google Hotels and
+Searches are for the party given by `adults` (1–8) plus `children_ages` (up to 4 children, ages 0–17), at most 8
+guests, in one room: every source is asked for that occupancy, and each quotes the offer it chooses (the room is the
+source's choice, so check it on the booking site). Xotelo cannot price children, so it counts them as adults. With `sort=price`, Google Hotels and
 HotelsCasa return their cheapest results rather than their most relevant ones. `min_stars` (and, for Google,
 `max_price_inr`) is also applied by those sources on their own price basis, before results are merged. A town or city name (`place:
 "Jaipur"`) searches the town, not its main station.
@@ -159,33 +158,19 @@ Guest-rating floor: `min_rating_pct` (e.g. 60 = 6.0/10 = 3.0/5). Its default com
 it per request ("at least 80%" → `80`, "include unrated hotels" → `0`). While it is on, hotels no source rates
 are left out, and the notes say how many.
 
-One room, really? Every source is asked for one room for the party, but most show only their **cheapest
-offer per booking site**, and for 3+ guests that is often two rooms: asked for one room for 4 adults, trivago's
-price matched its explicit two-room price at every hotel checked, and Agoda lists the same deal as "Cheapest
-combo rooms". A real room for 4 (family, quad) usually exists at a higher price that those sources never show.
-So each price carries `fit` with its evidence (`fit_basis`, `fit_note`):
+Each hotel comes with a section per source, holding that source's own listing and offers:
 
-| fit         | when                                                                                                                                                                                                |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `one_room`  | the room's name sleeps the party (HotelsCasa "Family 4 People"), or the booking site states the rate for that many guests (Booking.com and Agoda in Google's room list); every price for 1–2 guests |
-| `two_rooms` | the name says combo / 2 rooms or a multi-bedroom unit, or the price is about exactly double (1.9–2.15×) the same booking site's 2-adult price                                                       |
-| `unknown`   | anything else: a price ratio never proves one room, and a real family room often costs 2.5× or more                                                                                                 |
+| Source                  | What its section adds                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- |
+| trivago                 | the cheapest booking site's price, its rating and reviews, top amenities, area, hotel page                |
+| HotelsCasa              | a live-checked price with the room name, meals, refundability and availability; property type; rating     |
+| Google Hotels (SerpApi) | the lowest listed price, rating and reviews, property type, amenities, check-in and check-out times       |
+| Xotelo (TripAdvisor)    | a price per booking site (Agoda, Booking.com, Trip.com…) with tax, property type, usual price range (USD) |
+| OpenStreetMap           | location and type only (no prices)                                                                        |
 
-Each hotel gets `room_status` (`one_room`, `unverified` or `two_rooms_only`) and, when it differs from `cheapest`,
-`rank_price`: the price it is ranked and filtered by. No hotel is
-left out for having only two-room prices, since a room for the party may exist at a higher price; sorted by
-price, a hotel ranks by its cheapest one-room price (else its cheapest price not known to be two rooms) and
-two-room-only hotels come last. For 3–4 guests the search also asks trivago and Xotelo for 2 adults (same
-points; trivago's 15 cheapest misses by name) to spot doubled prices from the same booking site.
-
-To check a shortlist, `get_hotel_rates` with `verify_room: true` fetches Google's room list for the hotel (1
-SerpApi search from the monthly quota, which its notes report; needs `SERPAPI_KEY` and unofficial sources) — it finds rooms for the party with their prices
-(e.g. Booking.com "Standard Family Room" for 4 guests) and named combos — and returns Google's full room list as `room_list` (site, room name, stated guests, price,
-link) so an agent can judge room names the rules don't recognise; plus trivago's and Xotelo's 2-adult
-prices, and re-labels every price. When trivago's area search leaves a hotel out, trivago is asked for it by
-name (accepted only if trivago returns the same hotel id); if the hotel still can't be found live, the prices
-the search returned for the same stay and party are used. No free source lists every room of every site, so
-"no one-room price found" never means the hotel has no room for the party.
+`search_hotels` shows up to 3 offers per source; `get_hotel_rates` shows them all. When trivago's area search leaves
+a hotel out, `get_hotel_rates` asks trivago for it by name (accepted only if trivago returns the same hotel id); if
+the hotel still can't be found live, the prices the search returned for the same stay and party are used.
 
 Beds: no source can filter by bed type. Where the source names the room (HotelsCasa), each price carries it in
 `room` (e.g. "Family Room", "Comfort Quadruple Room", or "Deluxe Double Room" with extra beds), so check it

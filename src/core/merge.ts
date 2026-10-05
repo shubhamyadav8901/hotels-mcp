@@ -13,7 +13,10 @@ export interface MergedHotel {
   rating_10: number | null;
   review_count: number | null;
   sources: string[];
+  /** Every source price, flattened across listings. */
   prices: PriceQuote[];
+  /** Each source's own listing of this hotel (its name, rating, link, details and prices), in merge order. */
+  listings: HotelCandidate[];
 }
 
 // Words that carry no identity: generic lodging terms, brand prefixes and Indian city names that
@@ -131,12 +134,14 @@ export function mergeCandidates(candidates: HotelCandidate[]): MergedHotel[] {
         review_count: c.review_count,
         sources: [c.source],
         prices: [...c.prices],
+        listings: [c],
       });
       continue;
     }
     match.also_ids.push(id);
     if (!match.sources.includes(c.source)) match.sources.push(c.source);
     match.prices.push(...c.prices);
+    match.listings.push(c);
     match.stars ??= c.stars;
     // Keep the rating backed by more reviews.
     if (c.rating_10 !== null && (c.review_count ?? 0) > (match.review_count ?? 0)) {

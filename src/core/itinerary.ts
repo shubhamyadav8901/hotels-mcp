@@ -9,7 +9,6 @@ import {
   type RetiringRooms,
   type RetiringRoomStation,
 } from "./retiring.js";
-import type { RoomFitValue, RoomStatus } from "./occupancy.js";
 import { addDays, istClock, istDate, istIso } from "./time.js";
 import { travelMatrix, type TravelDeps } from "./travel.js";
 
@@ -43,11 +42,6 @@ export interface StayCandidate {
   rating_10: number | null;
   per_night_inr: number | null;
   seller: string | null;
-  /** Whether per_night_inr is one room for the party (see search_hotels). */
-  fit: RoomFitValue | null;
-  room_status: RoomStatus;
-  /** A cheaper price not known to be one room (possibly two rooms), when there is one. */
-  cheaper_other_per_night_inr: number | null;
   minutes_from_arrival: number | null;
   minutes_to_departure: number | null;
   /** Latest time to leave the hotel to make the departure with the buffer. */
@@ -192,7 +186,7 @@ export async function planStay(
   // Route a shortlist rather than every hotel: the cheapest, plus the nearest to the arrival and to the
   // departure point, so a slightly dearer hotel next to the station still gets scored on time + price.
   const all = [...found.values()];
-  const priceOf = (h: RankedHotel) => h.rank_price!.per_night_inr!;
+  const priceOf = (h: RankedHotel) => h.cheapest!.per_night_inr!;
   const byPrice = [...all].sort((a, b) => priceOf(a) - priceOf(b));
   const nearest = (p: StayRequest["arrive"]) =>
     [...all].sort((a, b) => haversineKm(p, a) - haversineKm(p, b));
@@ -302,7 +296,7 @@ function toCandidate(
   leaveBy: string | null,
   score: number | null,
 ): StayCandidate {
-  const ranked = h.rank_price;
+  const price = h.cheapest;
   return {
     hotel_id: h.hotel_id,
     name: h.name,
@@ -310,11 +304,8 @@ function toCandidate(
     lng: h.lng,
     stars: h.stars,
     rating_10: h.rating_10,
-    per_night_inr: ranked?.per_night_inr ?? null,
-    fit: ranked?.fit ?? null,
-    room_status: h.room_status,
-    cheaper_other_per_night_inr: h.cheapest && h.cheapest !== ranked ? h.cheapest.per_night_inr : null,
-    seller: ranked ? (ranked.seller ?? ranked.source) : null,
+    per_night_inr: price?.per_night_inr ?? null,
+    seller: price ? (price.seller ?? price.source) : null,
     minutes_from_arrival: inMin,
     minutes_to_departure: outMin,
     leave_by: leaveBy,

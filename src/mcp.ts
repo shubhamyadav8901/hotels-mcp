@@ -35,7 +35,7 @@ import {
 } from "./data/datasets.js";
 import { createNominatim, createPhoton } from "./providers/geocoders.js";
 import { createOsmLodging } from "./providers/osm-lodging.js";
-import { createSerpApi, SERPAPI_INFO, type SerpApi } from "./providers/serpapi.js";
+import { createSerpApi, SERPAPI_INFO } from "./providers/serpapi.js";
 import { createXotelo, loadXoteloKeys, type Xotelo } from "./providers/xotelo.js";
 import { createOsrm } from "./providers/osrm.js";
 import { RetiringRooms } from "./core/retiring.js";
@@ -58,8 +58,6 @@ export interface Deps {
   trivago: Pick<TrivagoProvider, "lookup" | "info">;
   /** Hosted MCP clients (named by provider id), so the server can open their sessions at start. */
   upstreams: UpstreamMcpClient[];
-  /** Google's room list for one hotel (SerpApi); null without a key. */
-  serp: Pick<SerpApi, "rooms" | "info"> | null;
   fx: { rates(): Promise<FxRates> };
   gazetteer: Gazetteer;
   travel: TravelDeps;
@@ -119,7 +117,6 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
         http,
         maxPages: config.SERPAPI_MAX_PAGES,
         statePath: `${config.STATE_DIR}/serpapi-quota.json`,
-        roomsPerHour: config.SERPAPI_ROOMS_PER_HOUR,
       })
     : null;
   // Priced sources first: when listings merge, the first source's id becomes the hotel_id.
@@ -164,7 +161,6 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
     hotelProviders,
     xotelo,
     trivago,
-    serp: serpapi,
     upstreams: [trivagoClient, hotelscasaClient],
     fx,
     gazetteer,
@@ -216,7 +212,6 @@ export function createServer(deps: Deps): McpServer {
     gazetteer: deps.gazetteer,
     xotelo: deps.xotelo,
     trivago: deps.trivago,
-    serp: deps.serp,
     memory: deps.memory,
     now: deps.now,
   });

@@ -19,24 +19,10 @@ export interface PriceQuote {
   available: boolean | null;
   refundable: boolean | null;
   url: string | null;
-  /**
-   * The same booking site's per-night price (same currency, same tax basis) for 2 adults at this hotel and
-   * dates, when it was fetched to tell a one-room price for 3–4 guests from a two-room one.
-   */
-  two_adult_per_night?: number | null;
   /** Room as the source names it (e.g. "Family Room with 2 Double Beds"), when the source says. */
   room: string | null;
-  /**
-   * Guests the booking site states this rate is for, where it reports real capacity (Google's room lists for
-   * Booking.com and Agoda); null or absent otherwise.
-   */
-  room_guests?: number | null;
-  /** Guests this price was quoted for, when fewer than the party (a room list fetched for 2 adults). */
-  priced_for_guests?: number;
-  /** Whether this is ONE room for the whole party, on what evidence (set when prices are labelled). */
-  fit?: "one_room" | "two_rooms" | "unknown";
-  fit_basis?: "party_search" | "room_name" | "room_capacity" | "price_ratio" | "none";
-  fit_note?: string | null;
+  /** Meals included, as the source states them (e.g. "Room Only", "Breakfast included"); absent when not stated. */
+  meal_plan?: string | null;
   fetched_at: string;
 }
 
@@ -54,6 +40,17 @@ export interface HotelCandidate {
   url: string | null;
   prices: PriceQuote[];
   fetched_at: string;
+  /** Kind of property as the source labels it (e.g. "Hotel", "Guest house", "Vacation rental"). */
+  property_type?: string | null;
+  /** Amenities the source lists for the property (its own wording). */
+  amenities?: string[];
+  /** Area or locality the source places it in (e.g. "Kochi"). */
+  area?: string | null;
+  /** Check-in / check-out times the source states (e.g. "2:00 PM"). */
+  check_in_time?: string | null;
+  check_out_time?: string | null;
+  /** The source's usual nightly price range for the property, independent of these dates. */
+  typical_price?: { min: number; max: number; currency: string } | null;
 }
 
 export interface HotelSearchQuery extends LatLng {
