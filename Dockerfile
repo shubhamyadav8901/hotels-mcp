@@ -15,6 +15,9 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY data ./data
+# Writable state (SerpApi monthly search count); docker-compose.yml mounts a named volume here.
+ENV STATE_DIR=/data/state
+RUN mkdir -p /data/state && chown node:node /data/state
 USER node
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

@@ -325,7 +325,7 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
       });
       if (r.unrated_hidden > 0) {
         notes.push(
-          `${r.unrated_hidden} hotels were left out by min_rating_pct because no source rates them.`,
+          `${r.unrated_hidden} hotels were left out by min_rating_pct (${a.min_rating_pct}%; the server default applies when it is not given) because no source rates them; min_rating_pct 0 includes them.`,
         );
       }
       if (r.sources_ok.includes("osm_lodging")) {

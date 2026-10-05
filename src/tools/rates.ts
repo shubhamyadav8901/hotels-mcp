@@ -36,6 +36,26 @@ import { validateDates } from "./hotels.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
 
+/** Most room-list offers returned; Google's list for one hotel is usually far shorter. */
+const ROOM_LIST_MAX = 60;
+
+const RoomOfferOut = z.object({
+  seller: z.string().describe("Booking site offering the room, e.g. Booking.com or Agoda."),
+  room: z.string().describe("Room name as the booking site lists it on Google."),
+  guests: z
+    .number()
+    .nullable()
+    .describe(
+      "Guests the site states this rate is for (Booking.com and Agoda state it); null when the site does not state it, and then the price is for the 2 adults the list was fetched for.",
+    ),
+  per_night_inr: z
+    .number()
+    .nullable()
+    .describe("Per-night price in INR as Google lists it (null when Google gave it in another currency)."),
+  url: z.string().nullable().describe("Link to the offer on the booking site (null if Google gives none)."),
+});
+type RoomOffer = z.infer<typeof RoomOfferOut>;
+
 const QuoteOut = z.object({
   seller: z
     .string()
@@ -160,6 +180,12 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           .array(QuoteOut)
           .describe(
             "One entry per offer (per source and seller; with verify_room, also each relevant room from Google's room list), cheapest per_night_inr first (unconverted prices last).",
+          ),
+        room_list: z
+          .array(RoomOfferOut)
+          .nullable()
+          .describe(
+            `Every room offer on Google's page for this hotel (fetched for 2 adults; 1 SerpApi search), sorted by seller then per_night_inr, for judging rooms the fit rules don't recognise; at most ${ROOM_LIST_MAX} entries (notes say when more were cut); null when verify_room did not fetch it.`,
           ),
         room_status: z
           .enum(ROOM_STATUSES)
@@ -354,6 +380,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         occupancyNote(a.adults, a.children_ages),
         "Meta-search prices can differ at checkout; includes_taxes=null means the source does not say whether GST is included.",
       ];
+      let room_list: RoomOffer[] | null = null;
       if (a.verify_room && guests > 2) {
         const failures: SourceFailure[] = [];
         // Google's room list, fetched for 2 adults (the fullest list): Booking.com and Agoda state each rate's
@@ -384,6 +411,25 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
               rq.hotels.deadlineMs,
             );
             const fetchedAt = rq.now().toISOString();
+            const allRooms = offers
+              .map((o): RoomOffer => ({
+                seller: o.seller,
+                room: o.room,
+                guests: o.guests,
+                per_night_inr: o.currency === "INR" ? Math.round(o.per_night) : null,
+                url: o.url,
+              }))
+              .sort(
+                (x, y) =>
+                  x.seller.localeCompare(y.seller) ||
+                  // Prices not in INR last; Infinity - Infinity would be NaN.
+                  (x.per_night_inr ?? Number.MAX_VALUE) - (y.per_night_inr ?? Number.MAX_VALUE),
+              );
+            room_list = allRooms.slice(0, ROOM_LIST_MAX);
+            if (allRooms.length > ROOM_LIST_MAX)
+              notes.push(
+                `verify_room: room_list shows the first ${ROOM_LIST_MAX} of Google's ${allRooms.length} room offers (by seller, then price).`,
+              );
             const fromRooms = offers
               .map((o): PriceQuote => {
                 const q: PriceQuote = {
@@ -552,6 +598,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         check_in: a.check_in,
         check_out: a.check_out,
         prices: sorted,
+        room_list,
         room_status: roomStatus(prices),
         cheapest_one_room_inr: cheapestOneRoom(prices)?.per_night_inr ?? null,
         cheapest_inr: inr.length ? Math.min(...inr) : null,

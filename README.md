@@ -131,7 +131,9 @@ See `.env.example`. Main settings: `HTTP_USER_AGENT`, `SERPAPI_KEY` (optional), 
 `NOMINATIM_URL`, `PHOTON_URL`, `METRO_TRAFFIC_MULTIPLIER`, `OTHER_TRAFFIC_MULTIPLIER`, `TRAIN_BUFFER_MIN`
 (default 30), `FLIGHT_BUFFER_MIN` (default 120), `DEFAULT_MIN_RATING_PCT` (default 0 = off; default for the
 `min_rating_pct` filter, which the agent can override per request), `PROVIDER_DEADLINE_MS` (default 20000; each source's time
-limit per search).
+limit per search), `SERPAPI_MAX_PAGES` (default 1), `SERPAPI_ROOMS_PER_HOUR` (default 8, 0 = unlimited; uncached Google
+room-list lookups by `verify_room`, to save the SerpApi quota) and `STATE_DIR` (default `~/.cache/india-hotels-mcp`;
+holds the SerpApi monthly search count so it survives restarts; docker compose keeps it in the `hotels-state` volume).
 
 HTTP mode only: `PORT` (default 3001), `HOST` (bind address, default `127.0.0.1`; `0.0.0.0` in the Docker
 image) and `ALLOWED_HOSTS` (comma-separated extra hostnames accepted in the `Host` header, any port;
@@ -178,7 +180,8 @@ points; trivago's 15 cheapest misses by name) to spot doubled prices from the sa
 
 To check a shortlist, `get_hotel_rates` with `verify_room: true` fetches Google's room list for the hotel (1
 SerpApi search from the monthly quota, which its notes report; needs `SERPAPI_KEY` and unofficial sources) — it finds rooms for the party with their prices
-(e.g. Booking.com "Standard Family Room" for 4 guests) and named combos — plus trivago's and Xotelo's 2-adult
+(e.g. Booking.com "Standard Family Room" for 4 guests) and named combos — and returns Google's full room list as `room_list` (site, room name, stated guests, price,
+link) so an agent can judge room names the rules don't recognise; plus trivago's and Xotelo's 2-adult
 prices, and re-labels every price. When trivago's area search leaves a hotel out, trivago is asked for it by
 name (accepted only if trivago returns the same hotel id); if the hotel still can't be found live, the prices
 the search returned for the same stay and party are used. No free source lists every room of every site, so

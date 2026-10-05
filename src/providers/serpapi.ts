@@ -1,3 +1,5 @@
+import * as nodeFs from "node:fs";
+import { dirname } from "node:path";
 import { z } from "zod";
 import { AppError, upstreamText } from "../core/errors.js";
 import { haversineKm } from "../core/geo.js";
@@ -135,7 +137,18 @@ export interface SerpApiOptions {
   /** Google Hotels pages (~20 hotels each) per area search; every page is one search against the quota. */
   maxPages?: number;
   baseUrl?: string;
+  /** JSON file holding this month's search count, so the quota survives restarts; omitted = in memory only. */
+  statePath?: string;
+  /** File system used for statePath (injectable for tests). */
+  fs?: QuotaFs;
+  /** Uncached room-list lookups allowed per rolling hour; 0 = unlimited. */
+  roomsPerHour?: number;
 }
+
+export type QuotaFs = Pick<typeof nodeFs, "readFileSync" | "writeFileSync" | "renameSync" | "mkdirSync">;
+
+const QuotaState = z.object({ month: z.string(), used: z.number().int().min(0) });
+const HOUR_MS = 3_600_000;
 
 /** Builds the Google Hotels request URL (exported for tests). */
 export function serpApiUrl(q: HotelSearchQuery, apiKey: string, baseUrl = SERPAPI_URL): string {
@@ -229,13 +242,52 @@ function roomOffers(payload: z.infer<typeof DetailsPayload>): GoogleRoomOffer[] 
 }
 
 export function createSerpApi(opts: SerpApiOptions) {
-  const { apiKey, now = Date.now, monthlyQuota = 250, maxPages = 1, baseUrl = SERPAPI_URL } = opts;
+  const {
+    apiKey,
+    now = Date.now,
+    monthlyQuota = 250,
+    maxPages = 1,
+    baseUrl = SERPAPI_URL,
+    statePath,
+    fs = nodeFs,
+    roomsPerHour = 0,
+  } = opts;
   const http: HttpOptions = { ...opts.http, timeoutMs: opts.http.timeoutMs ?? TIMEOUT_MS };
   const cache = new TtlCache<{ props: Prop[]; fetchedAt: string; next: string | null }>(500, now);
-  let month = "";
-  let used = 0;
-
   const monthKey = () => new Date(now()).toISOString().slice(0, 7);
+  let { month, used } = loadQuota();
+  let writeFailed = false;
+
+  /** This month's saved count; a missing or unreadable file starts from 0. */
+  function loadQuota(): { month: string; used: number } {
+    if (!statePath) return { month: "", used: 0 };
+    try {
+      const parsed = QuotaState.safeParse(JSON.parse(fs.readFileSync(statePath, "utf8")));
+      if (parsed.success) return parsed.data;
+    } catch {
+      // Missing or corrupt: start from 0.
+    }
+    return { month: "", used: 0 };
+  }
+
+  /** Saves the count atomically (temp file + rename); a failure is logged once and never blocks a search. */
+  function saveQuota(): void {
+    if (!statePath) return;
+    const tmp = `${statePath}.${process.pid}.tmp`;
+    try {
+      fs.mkdirSync(dirname(statePath), { recursive: true });
+      fs.writeFileSync(tmp, JSON.stringify({ month, used }));
+      fs.renameSync(tmp, statePath);
+    } catch (err) {
+      if (!writeFailed) {
+        writeFailed = true;
+        console.error(
+          `SerpApi quota counter could not be saved to ${statePath} (counting in memory only): ${(err as Error).message}`,
+        );
+      }
+    }
+  }
+
   function quotaRemaining(): number {
     if (monthKey() !== month) {
       month = monthKey();
@@ -250,6 +302,7 @@ export function createSerpApi(opts: SerpApiOptions) {
   async function request<T extends { error?: string | null }>(
     schema: z.ZodType<T>,
     url: string,
+    onSpend?: () => void,
   ): Promise<T | null> {
     if (quotaRemaining() <= 0) {
       throw new AppError(
@@ -258,13 +311,20 @@ export function createSerpApi(opts: SerpApiOptions) {
         "Cached searches still work; new areas or dates must wait for next month.",
       );
     }
+    // Another process (a second server, the smoke script) may share the state file: count from whichever
+    // is higher, so searches it spent are not lost when this one saves.
+    const disk = loadQuota();
+    if (disk.month === month) used = Math.max(used, disk.used);
     used++;
+    saveQuota();
+    onSpend?.();
     const payload = parseUpstream("serpapi", schema, await getJson(url, http));
     if (payload.error) {
       // "hasn't returned any results" is a valid empty answer, not a failure.
       if (/hasn't returned any results|no results/i.test(payload.error)) return null;
       if (/run out of searches|plan.*limit/i.test(payload.error)) {
         used = monthlyQuota;
+        saveQuota();
         throw new AppError("QUOTA_EXHAUSTED", `SerpApi: ${upstreamText(payload.error)}`);
       }
       throw new AppError("UPSTREAM_UNAVAILABLE", `SerpApi: ${upstreamText(payload.error)}`);
@@ -359,12 +419,33 @@ export function createSerpApi(opts: SerpApiOptions) {
   }
 
   const roomsCache = new TtlCache<GoogleRoomOffer[]>(200, now);
+  /** Start times of uncached room-list lookups in the last hour. */
+  let roomLookups: number[] = [];
+
+  /** Throws RATE_LIMITED when this hour's room-list lookups are used up. */
+  function checkRoomCap(): void {
+    if (roomsPerHour <= 0) return;
+    const t = now();
+    roomLookups = roomLookups.filter((at) => at > t - HOUR_MS);
+    if (roomLookups.length >= roomsPerHour) {
+      const waitMin = Math.max(1, Math.ceil((roomLookups[0]! + HOUR_MS - t) / 60_000));
+      throw new AppError(
+        "RATE_LIMITED",
+        `Google room-list lookups are capped at ${roomsPerHour} per hour to save SerpApi quota; the next is possible in ~${waitMin} min, and until then every uncached lookup gets this same answer`,
+        "Cached room lists still work; SERPAPI_ROOMS_PER_HOUR sets the cap.",
+      );
+    }
+  }
 
   /** Every room Google's hotel page lists for these dates, per booking site (1 SerpApi search, cached 24 h). */
   async function rooms(propertyToken: string, q: GoogleRoomsQuery): Promise<GoogleRoomOffer[]> {
     // Everything that changes the request changes the cache key (the URL without the key).
     return roomsCache.getOrSet(serpApiRoomsUrl(propertyToken, q, "-"), CACHE_TTL_MS, async () => {
-      const payload = await request(DetailsPayload, serpApiRoomsUrl(propertyToken, q, apiKey, baseUrl));
+      checkRoomCap();
+      // Recorded only once a search is actually spent (not when the monthly quota is already used up).
+      const payload = await request(DetailsPayload, serpApiRoomsUrl(propertyToken, q, apiKey, baseUrl), () =>
+        roomLookups.push(now()),
+      );
       return payload ? roomOffers(payload) : [];
     });
   }

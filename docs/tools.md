@@ -269,6 +269,12 @@ Fetches current prices for one hotel from every source for the given dates and l
 | `prices[].fit_basis` | `"party_search"` \| `"room_name"` \| `"room_capacity"` \| `"price_ratio"` \| `"none"` | Evidence for fit: party_search (the source was searched for the party; proves one room only for 1–2 guests), room_name (the room's name), room_capacity (the booking site's stated guest count for the rate), price_ratio (compared with the same booking site's 2-adult price), none. |
 | `prices[].fit_note` | string \| null | The evidence behind fit in words (room name, ratio, what is unknown). |
 | `prices[].fetched_at` | string | ISO time the source returned this price. |
+| `room_list` | object[] \| null | Every room offer on Google's page for this hotel (fetched for 2 adults; 1 SerpApi search), sorted by seller then per_night_inr, for judging rooms the fit rules don't recognise; at most 60 entries (notes say when more were cut); null when verify_room did not fetch it. |
+| `room_list[].seller` | string | Booking site offering the room, e.g. Booking.com or Agoda. |
+| `room_list[].room` | string | Room name as the booking site lists it on Google. |
+| `room_list[].guests` | number \| null | Guests the site states this rate is for (Booking.com and Agoda state it); null when the site does not state it, and then the price is for the 2 adults the list was fetched for. |
+| `room_list[].per_night_inr` | number \| null | Per-night price in INR as Google lists it (null when Google gave it in another currency). |
+| `room_list[].url` | string \| null | Link to the offer on the booking site (null if Google gives none). |
 | `room_status` | `"one_room"` \| `"unverified"` \| `"two_rooms_only"` | What the prices show about one room for the party: one_room (at least one price is one room for the party), two_rooms_only (every price found is two rooms; a room for the party may still exist at a higher price), unverified (otherwise). |
 | `cheapest_one_room_inr` | number \| null | Lowest per_night_inr among prices that are one room for the party (null if none). |
 | `cheapest_inr` | number \| null | Lowest per_night_inr among prices for the whole party, of any fit (null if none in INR). |

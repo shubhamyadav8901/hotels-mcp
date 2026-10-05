@@ -56,6 +56,8 @@ export interface Deps {
   xotelo: Pick<Xotelo, "rates" | "info">;
   /** Looks one known hotel up in trivago by name (id-checked). */
   trivago: Pick<TrivagoProvider, "lookup" | "info">;
+  /** Hosted MCP clients (named by provider id), so the server can open their sessions at start. */
+  upstreams: UpstreamMcpClient[];
   /** Google's room list for one hotel (SerpApi); null without a key. */
   serp: Pick<SerpApi, "rooms" | "info"> | null;
   fx: { rates(): Promise<FxRates> };
@@ -78,15 +80,21 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
   );
 
   const fx = createFx(http);
+  const trivagoClient = new UpstreamMcpClient("trivago", TRIVAGO_URL, TRIVAGO_TOOLS, TRIVAGO_TIMEOUT_MS, ua);
+  const hotelscasaClient = new UpstreamMcpClient(
+    "hotelscasa",
+    HOTELSCASA_URL,
+    HOTELSCASA_TOOLS,
+    HOTELSCASA_TIMEOUT_MS,
+    ua,
+  );
   const trivago = createTrivagoProvider(
-    new UpstreamMcpClient("trivago", TRIVAGO_URL, TRIVAGO_TOOLS, TRIVAGO_TIMEOUT_MS, ua).call,
+    trivagoClient.call,
     undefined,
     // Points answer in ~7–10 s; leave room within the per-source deadline to merge the ones that did.
     Math.max(5_000, config.PROVIDER_DEADLINE_MS - 6_000),
   );
-  const hotelscasa = createHotelsCasaProvider(
-    new UpstreamMcpClient("hotelscasa", HOTELSCASA_URL, HOTELSCASA_TOOLS, HOTELSCASA_TIMEOUT_MS, ua).call,
-  );
+  const hotelscasa = createHotelsCasaProvider(hotelscasaClient.call);
   const dir = opts.dataDir ?? DEFAULT_DATA_DIR;
   const manifest = readManifest(dir);
   const osmLodging = createOsmLodging(
@@ -106,7 +114,13 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
     searchBudgetMs: Math.max(2_000, config.PROVIDER_DEADLINE_MS - 6_000),
   });
   const serpapi = config.SERPAPI_KEY
-    ? createSerpApi({ apiKey: config.SERPAPI_KEY, http, maxPages: config.SERPAPI_MAX_PAGES })
+    ? createSerpApi({
+        apiKey: config.SERPAPI_KEY,
+        http,
+        maxPages: config.SERPAPI_MAX_PAGES,
+        statePath: `${config.STATE_DIR}/serpapi-quota.json`,
+        roomsPerHour: config.SERPAPI_ROOMS_PER_HOUR,
+      })
     : null;
   // Priced sources first: when listings merge, the first source's id becomes the hotel_id.
   const hotelProviders: HotelSearchProvider[] = [
@@ -151,6 +165,7 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
     xotelo,
     trivago,
     serp: serpapi,
+    upstreams: [trivagoClient, hotelscasaClient],
     fx,
     gazetteer,
     travel: {

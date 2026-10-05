@@ -12,6 +12,10 @@ services:
     environment:
       PORT: "3001"
       HOST: "0.0.0.0"
+      STATE_DIR: /data/state
+    # Keeps the SerpApi monthly search count across restarts and rebuilds.
+    volumes:
+      - hotels-state:/data/state
     restart: unless-stopped
 
   # Optional self-hosted routing. Prepare the data first with scripts/osrm-setup.sh, then:
@@ -37,3 +41,6 @@ services:
     ports:
       - "127.0.0.1:5002:5000"
     restart: unless-stopped
+
+volumes:
+  hotels-state:

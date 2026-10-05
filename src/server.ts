@@ -6,6 +6,7 @@ import express from "express";
 import { loadConfig } from "./config.js";
 import { DEFAULT_ALLOWED_HOSTS, hostCheck } from "./http-guard.js";
 import { createDeps, createServer, SERVER_NAME, SERVER_VERSION, type Deps } from "./mcp.js";
+import { warmUpUpstreams } from "./providers/upstream-mcp.js";
 
 async function runStdio(deps: Deps): Promise<void> {
   const server = createServer(deps);
@@ -79,5 +80,14 @@ if (missing.length) {
     `Warning: bundled datasets missing or empty: ${missing.join(", ")} (run npm run build:data).`,
   );
 }
+// Open the upstream MCP sessions (trivago, HotelsCasa) now rather than inside the first search's time budget.
+// Runs in the background: startup never waits for it, and a failure is only logged.
+const enabled = new Set(
+  deps.registry
+    .status()
+    .filter((p) => p.enabled)
+    .map((p) => p.id),
+);
+void warmUpUpstreams(deps.upstreams, (name) => enabled.has(name));
 if (process.argv.includes("--http")) runHttp(deps);
 else await runStdio(deps);
