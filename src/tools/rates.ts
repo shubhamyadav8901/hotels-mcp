@@ -19,6 +19,7 @@ import {
 } from "../core/occupancy.js";
 import type { PriceQuote } from "../core/types.js";
 import { convertToInr } from "../providers/fx.js";
+import type { TrivagoProvider } from "../providers/trivago.js";
 import type { Xotelo } from "../providers/xotelo.js";
 import { handle, readOnly } from "./common.js";
 import { occupancyFields, occupancyNote, validateOccupancy } from "./occupancy.js";
@@ -55,6 +56,7 @@ export interface RatesToolDeps {
   hotels: HotelSearchDeps;
   gazetteer: Gazetteer;
   xotelo: Pick<Xotelo, "rates" | "info">;
+  trivago: Pick<TrivagoProvider, "lookup" | "info">;
   memory: HotelMemory;
   now: () => Date;
 }
@@ -186,10 +188,34 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         );
       }
 
+      // The live match may lack ids only the original search knew (e.g. trivago's, when its area search
+      // missed the hotel this time); keep them so name lookups and direct rate calls can still run.
+      const knownIds = [target.hotel_id, ...target.also_ids].filter((id) => id && id !== match!.hotel_id);
+      const withIds: RankedHotel = { ...match, also_ids: [...new Set([...match.also_ids, ...knownIds])] };
       const prices: PriceQuote[] = [...match.prices];
       const sources_failed = [...r.sources_failed];
+      // trivago's area search can leave a hotel out; look it up by name for this party instead.
+      // Also when falling back to the search's prices: a live trivago price beats a remembered one.
+      if (fromSearch || !prices.some((p) => p.source === "trivago")) {
+        try {
+          const live = await trivagoByName(deps, withIds, {
+            check_in: a.check_in,
+            check_out: a.check_out,
+            adults: a.adults,
+            children_ages: a.children_ages,
+          });
+          if (live.length) {
+            for (let i = prices.length - 1; i >= 0; i--)
+              if (prices[i]!.source === "trivago") prices.splice(i, 1);
+            prices.push(...live);
+          }
+        } catch (err) {
+          const e = toAppError(err);
+          sources_failed.push({ source: deps.trivago.info.id, code: e.code, message: e.message });
+        }
+      }
       // Xotelo prices only the nearest hotels during a search; fetch this one's per-site prices directly.
-      const xoteloId = [match.hotel_id, ...match.also_ids].find((id) => id.startsWith("xotelo:"));
+      const xoteloId = [withIds.hotel_id, ...withIds.also_ids].find((id) => id.startsWith("xotelo:"));
       if (xoteloId && !prices.some((p) => p.source === "xotelo")) {
         try {
           const quotes = await deps.hotels.registry.run(deps.xotelo.info.id, () =>
@@ -235,7 +261,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         try {
           const { prices: baseline, failures } = await twoAdultPrices(
             deps,
-            match,
+            withIds,
             a.check_in,
             a.check_out,
             new Set(unverified.map((p) => p.source)),
@@ -365,6 +391,17 @@ async function twoAdultPrices(
   for (const p of same?.prices ?? []) {
     if (p.per_night_inr !== null) prices.set(baselineKey(p.source, p.seller), p.per_night_inr);
   }
+  // trivago's area search can leave the hotel out; look it up by name. A failure keeps the other baselines.
+  if (sources.has("trivago") && !prices.has(baselineKey("trivago", null))) {
+    try {
+      const live = await trivagoByName(deps, hotel, { check_in: checkIn, check_out: checkOut, adults: 2 });
+      for (const p of live)
+        if (p.per_night_inr !== null) prices.set(baselineKey("trivago", p.seller), p.per_night_inr);
+    } catch (err) {
+      const e = toAppError(err);
+      failures.push({ source: deps.trivago.info.id, code: e.code, message: e.message });
+    }
+  }
   // Xotelo prices only the nearest hotels in a search; ask for this one directly if needed. A failure here
   // keeps the other sources' baselines.
   const xoteloId = [hotel.hotel_id, ...hotel.also_ids].find((id) => id.startsWith("xotelo:"));
@@ -389,4 +426,36 @@ async function twoAdultPrices(
     }
   }
   return { prices, failures };
+}
+
+/** trivago's prices for one hotel looked up by name, for a given stay and party; [] when trivago doesn't list it. */
+async function trivagoByName(
+  deps: RatesToolDeps,
+  hotel: RankedHotel,
+  q: { check_in: string; check_out: string; adults: number; children_ages?: number[] },
+): Promise<PriceQuote[]> {
+  const id = [hotel.hotel_id, ...hotel.also_ids].find((x) => x.startsWith("trivago:"));
+  if (!id || !deps.hotels.registry.isEnabled(deps.trivago.info.id)) return [];
+  const found = await deps.hotels.registry.run(
+    deps.trivago.info.id,
+    () => deps.trivago.lookup(id.slice("trivago:".length), hotel.name, undefined, q),
+    deps.hotels.deadlineMs,
+  );
+  const guests = q.adults + (q.children_ages?.length ?? 0);
+  // trivago normally quotes INR (currency=INR); convert anything else rather than dropping it.
+  const fx = found?.prices.some((p) => p.currency !== "INR")
+    ? await deps.hotels.fx.rates().catch(() => null)
+    : null;
+  return (found?.prices ?? []).map((p) => {
+    const priced = {
+      ...p,
+      per_night_inr:
+        p.currency === "INR"
+          ? Math.round(p.per_night)
+          : fx
+            ? convertToInr(p.per_night, p.currency, fx)
+            : null,
+    };
+    return { ...priced, ...occupancyLabel(priced, guests) };
+  });
 }

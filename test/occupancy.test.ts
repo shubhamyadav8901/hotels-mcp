@@ -432,3 +432,213 @@ describe("agent-test fixes", () => {
     expect(other.isError).toBe(true);
   });
 });
+
+describe("trivago name lookup in get_hotel_rates", () => {
+  const listing = (price: number): HotelCandidate => ({
+    source: "trivago",
+    source_id: "h1",
+    name: "Sunrise Residency",
+    lat: 28.6435,
+    lng: 77.2194,
+    stars: 3,
+    rating_10: 8,
+    review_count: 10,
+    url: null,
+    fetched_at: T,
+    prices: [{ ...quote("trivago", price), per_night_inr: null }],
+  });
+
+  it("gets the 2-adult comparison price by name when trivago's area search leaves the hotel out", async () => {
+    // Area search lists the hotel only for the party of 4; the 2-adult re-search misses it.
+    const tv: HotelSearchProvider = {
+      info: {
+        id: "trivago",
+        name: "trivago",
+        kind: "hotel-prices",
+        official: true,
+        needsKey: false,
+        limitations: [],
+      },
+      search: vi.fn(async (q) => (q.adults === 4 ? [listing(3800)] : [])),
+    };
+    const lookup = vi.fn(async (_id: string, _n: string, _c: string | undefined, q: { adults: number }) =>
+      q.adults === 2 ? listing(1900) : null,
+    );
+    const registry = new ProviderRegistry();
+    [tv.info, FX_INFO, XOTELO_INFO].forEach((i) => registry.register(i));
+    const { TRIVAGO_INFO } = await import("../src/providers/trivago.js");
+    const c = await connect(
+      testDeps({
+        registry,
+        hotelProviders: [tv],
+        memory: new HotelMemory(),
+        now: () => new Date(T),
+        xotelo: { info: XOTELO_INFO, rates: vi.fn(async () => []) },
+        trivago: { info: TRIVAGO_INFO, lookup },
+      }),
+    );
+    const r = await c.callTool({
+      name: "get_hotel_rates",
+      arguments: {
+        name: "Sunrise Residency",
+        lat: 28.6435,
+        lng: 77.2194,
+        check_in: "2026-11-10",
+        check_out: "2026-11-11",
+        adults: 4,
+        check_single_room: true,
+      },
+    });
+    const p = (r.structuredContent as { prices: Record<string, any>[] }).prices.find(
+      (x) => x.source === "trivago",
+    )!;
+    expect(p.single_room_check).toMatchObject({
+      verdict: "looks_like_2_rooms",
+      two_adult_per_night_inr: 1900,
+    });
+    expect(lookup).toHaveBeenCalledWith(
+      "h1",
+      "Sunrise Residency",
+      undefined,
+      expect.objectContaining({ adults: 2 }),
+    );
+  });
+
+  it("prefers a live trivago price by name over the search's remembered one when the re-check misses the hotel", async () => {
+    let n = 0;
+    const tv: HotelSearchProvider = {
+      info: {
+        id: "trivago",
+        name: "trivago",
+        kind: "hotel-prices",
+        official: true,
+        needsKey: false,
+        limitations: [],
+      },
+      search: vi.fn(async () => (n++ === 0 ? [listing(3000)] : [])),
+    };
+    const registry = new ProviderRegistry();
+    [tv.info, FX_INFO, XOTELO_INFO].forEach((i) => registry.register(i));
+    const { TRIVAGO_INFO } = await import("../src/providers/trivago.js");
+    const c = await connect(
+      testDeps({
+        registry,
+        hotelProviders: [tv],
+        memory: new HotelMemory(),
+        now: () => new Date(T),
+        xotelo: { info: XOTELO_INFO, rates: vi.fn(async () => []) },
+        trivago: { info: TRIVAGO_INFO, lookup: vi.fn(async () => listing(3300)) },
+      }),
+    );
+    const d = { check_in: "2026-11-10", check_out: "2026-11-11", adults: 4 };
+    const s = await c.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...d } });
+    const id = (s.structuredContent as { hotels: { hotel_id: string }[] }).hotels[0]!.hotel_id;
+    const r = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...d } });
+    const prices = (r.structuredContent as { prices: { source: string; per_night_inr: number }[] }).prices;
+    expect(prices.filter((p) => p.source === "trivago").map((p) => p.per_night_inr)).toEqual([3300]);
+  });
+});
+
+describe("trivago lookup with ids from the original search", () => {
+  it("looks trivago up by name when another source finds the hotel on the re-check but trivago doesn't", async () => {
+    let tvCalls = 0;
+    const tv: HotelSearchProvider = {
+      info: {
+        id: "trivago",
+        name: "trivago",
+        kind: "hotel-prices",
+        official: true,
+        needsKey: false,
+        limitations: [],
+      },
+      search: vi.fn(async () =>
+        tvCalls++ === 0
+          ? [
+              {
+                source: "trivago",
+                source_id: "tv1",
+                name: "Sunrise Residency",
+                lat: 28.6435,
+                lng: 77.2194,
+                stars: 3,
+                rating_10: 8,
+                review_count: 10,
+                url: null,
+                fetched_at: T,
+                prices: [{ ...quote("trivago", 3000), per_night_inr: null }],
+              },
+            ]
+          : [],
+      ),
+    };
+    const casa: HotelSearchProvider = {
+      info: {
+        id: "hotelscasa",
+        name: "hotelscasa",
+        kind: "hotel-prices",
+        official: true,
+        needsKey: false,
+        limitations: [],
+      },
+      search: vi.fn(async () => [
+        {
+          source: "hotelscasa",
+          source_id: "hc1",
+          name: "Hotel Sunrise Residency",
+          lat: 28.6436,
+          lng: 77.2195,
+          stars: 3,
+          rating_10: 8,
+          review_count: 5,
+          url: null,
+          fetched_at: T,
+          prices: [
+            { ...quote("hotelscasa", 4200, { room: "Family Room", available: true }), per_night_inr: null },
+          ],
+        },
+      ]),
+    };
+    const lookup = vi.fn(async () => ({
+      source: "trivago",
+      source_id: "tv1",
+      name: "Sunrise Residency",
+      lat: 28.6435,
+      lng: 77.2194,
+      stars: 3,
+      rating_10: 8,
+      review_count: 10,
+      url: null,
+      fetched_at: T,
+      prices: [{ ...quote("trivago", 3100), per_night_inr: null }],
+    }));
+    const registry = new ProviderRegistry();
+    [tv.info, casa.info, FX_INFO, XOTELO_INFO].forEach((i) => registry.register(i));
+    const { TRIVAGO_INFO } = await import("../src/providers/trivago.js");
+    const c = await connect(
+      testDeps({
+        registry,
+        hotelProviders: [tv, casa],
+        memory: new HotelMemory(),
+        now: () => new Date(T),
+        xotelo: { info: XOTELO_INFO, rates: vi.fn(async () => []) },
+        trivago: { info: TRIVAGO_INFO, lookup },
+      }),
+    );
+    const d = { check_in: "2026-11-10", check_out: "2026-11-11", adults: 4 };
+    const s = await c.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...d } });
+    const id = (s.structuredContent as { hotels: { hotel_id: string }[] }).hotels[0]!.hotel_id;
+    expect(id).toBe("trivago:tv1");
+    const r = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...d } });
+    const prices = (r.structuredContent as { prices: { source: string; per_night_inr: number }[] }).prices;
+    expect(lookup).toHaveBeenCalledWith(
+      "tv1",
+      expect.any(String),
+      undefined,
+      expect.objectContaining({ adults: 4 }),
+    );
+    expect(prices.map((p) => [p.source, p.per_night_inr])).toEqual([
+      ["trivago", 3100],
+      ["hotelscasa", 4200],
+    ]);
+  });
+});

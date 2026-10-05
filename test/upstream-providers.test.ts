@@ -183,3 +183,49 @@ describe("HotelsCasa room names", () => {
     expect(first?.prices[0]?.room).toBe("Deluxe Double Room, Room Only");
   });
 });
+
+describe("trivago name lookup", () => {
+  const acc = (id: string, name: string, price: string) => ({
+    structuredContent: {
+      accommodations: [
+        {
+          accommodation_id: id,
+          accommodation_name: name,
+          latitude: 9.969,
+          longitude: 76.289,
+          currency: "INR",
+          price_per_night: price,
+          price_per_stay: price,
+          advertisers: "Agoda",
+        },
+      ],
+    },
+  });
+
+  it("asks trivago's text search by name for the party, and accepts only the same accommodation id", async () => {
+    const call = vi.fn().mockResolvedValue(acc("abc123", "Paulson Park Kochi", "₹2,669"));
+    const p = createTrivagoProvider(call, NOW);
+    const hit = await p.lookup("abc123", "Paulson Park Kochi", undefined, {
+      check_in: "2026-11-12",
+      check_out: "2026-11-13",
+      adults: 4,
+    });
+    expect(call).toHaveBeenCalledWith(
+      "trivago-accommodation-search",
+      expect.objectContaining({ query: "Paulson Park Kochi", adults: 4, rooms: 1 }),
+    );
+    expect(hit?.prices[0]).toMatchObject({ per_night: 2669, seller: "Agoda" });
+  });
+
+  it("rejects trivago's best match when it is a different hotel", async () => {
+    const call = vi.fn().mockResolvedValue(acc("zzz999", "Evershine Residency", "₹1,500"));
+    const p = createTrivagoProvider(call, NOW);
+    expect(
+      await p.lookup("abc123", "Anupam Residency", undefined, {
+        check_in: "2026-11-12",
+        check_out: "2026-11-13",
+        adults: 2,
+      }),
+    ).toBeNull();
+  });
+});

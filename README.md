@@ -155,8 +155,9 @@ hotel's cheapest price is unverified, `cheapest_single_room` gives its cheapest 
 `get_hotel_rates` with `check_single_room: true` re-prices the unverified sources for 2 adults and gives each
 price a verdict from its ratio to the same seller's 2-adult price: `priced_as_2_adults` (≤1.1×, probably a
 two-person room), `plausible_single_room` (1.1–1.85×), `looks_like_2_rooms` (1.85–2.15×), `unusually_high`
-(2.15–4×), `implausible` (≥4×) or `unknown` (no 2-adult price, or a party over 4). If the live re-check cannot find
-the hotel, it uses the prices the search returned for the same stay and party. Sorting by price, `max_price_inr`
+(2.15–4×), `implausible` (≥4×) or `unknown` (no 2-adult price, or a party over 4). When trivago's area search leaves
+a hotel out, trivago is asked for it by name (accepted only if trivago returns the same hotel id); if the hotel
+still can't be found live, the prices the search returned for the same stay and party are used. Sorting by price, `max_price_inr`
 and `plan_stays` scoring use a hotel's cheapest single-room price when it has one. An agent can search broadly
 and check only its shortlist (each check takes one extra search of trivago and Xotelo, ~15–25 s).
 

@@ -7,7 +7,8 @@ import type { HotelSearchProvider, ProviderInfo } from "./types.js";
 import type { CallUpstream } from "./upstream-mcp.js";
 
 export const TRIVAGO_URL = "https://mcp.trivago.com/mcp";
-export const TRIVAGO_TOOLS = ["trivago-accommodation-radius-search"] as const;
+// Read-only search tools only; trivago offers nothing else we call.
+export const TRIVAGO_TOOLS = ["trivago-accommodation-radius-search", "trivago-accommodation-search"] as const;
 export const TRIVAGO_TIMEOUT_MS = 15_000;
 
 export const TRIVAGO_INFO: ProviderInfo = {
@@ -45,23 +46,100 @@ const Payload = z.union([
   }),
 ]);
 
+export interface TrivagoProvider extends HotelSearchProvider {
+  /**
+   * Looks one known hotel up by name (trivago's text search) and returns it only if trivago's answer is that
+   * same accommodation id: the text search returns its single best match, which may be another hotel.
+   */
+  lookup(
+    id: string,
+    name: string,
+    context: string | undefined,
+    q: Omit<HotelSearchQuery, "lat" | "lng" | "radius_km">,
+  ): Promise<HotelCandidate | null>;
+}
+
 export function createTrivagoProvider(
   call: CallUpstream,
   now: () => Date = () => new Date(),
-): HotelSearchProvider {
+): TrivagoProvider {
+  const occupancy = (q: Pick<HotelSearchQuery, "check_in" | "check_out" | "adults" | "children_ages">) => ({
+    arrival: q.check_in,
+    departure: q.check_out,
+    adults: q.adults,
+    rooms: 1,
+    ...(q.children_ages?.length
+      ? { children: q.children_ages.length, children_ages: q.children_ages.join("-") }
+      : {}),
+    country: "IN",
+    currency: "INR",
+    language: "EN_IN",
+  });
+
+  async function accommodations(tool: (typeof TRIVAGO_TOOLS)[number], args: Record<string, unknown>) {
+    const result = await call(tool, args);
+    if (result.isError) {
+      throw new AppError("UPSTREAM_UNAVAILABLE", "trivago reported an error for this search");
+    }
+    const payload = parseUpstream("trivago", Payload, result.structuredContent);
+    if ("validation_errors" in payload) {
+      // trivago reports bad input as data rather than isError.
+      const msg = upstreamText(payload.validation_errors.map((e) => e.message).join("; "));
+      throw new AppError("INVALID_INPUT", `trivago rejected the search: ${msg}`);
+    }
+    return payload.accommodations;
+  }
+
+  function toCandidates(
+    list: z.infer<typeof Accommodation>[],
+    q: Pick<HotelSearchQuery, "check_in" | "check_out">,
+  ) {
+    const fetchedAt = now().toISOString();
+    const nights = nightsBetween(q.check_in, q.check_out);
+    return list.map((a): HotelCandidate => {
+      const perNight = parseAmount(a.price_per_night);
+      const total = parseAmount(a.price_per_stay);
+      return {
+        source: "trivago",
+        source_id: a.accommodation_id,
+        name: a.accommodation_name,
+        lat: a.latitude,
+        lng: a.longitude,
+        stars: a.hotel_rating ? a.hotel_rating : null,
+        rating_10: parseAmount(a.review_rating),
+        review_count: parseAmount(a.review_count),
+        url: a.accommodation_url ?? null,
+        fetched_at: fetchedAt,
+        prices:
+          perNight === null && total === null
+            ? []
+            : [
+                {
+                  source: "trivago",
+                  seller: a.advertisers?.trim() || null,
+                  per_night: perNight ?? (total as number) / nights,
+                  total,
+                  currency: a.currency,
+                  per_night_inr: null,
+                  includes_taxes: null,
+                  available: null,
+                  refundable: null,
+                  url: a.accommodation_url ?? null,
+                  room: null,
+                  fetched_at: fetchedAt,
+                },
+              ],
+      };
+    });
+  }
+
   return {
     info: TRIVAGO_INFO,
     async search(q: HotelSearchQuery): Promise<HotelCandidate[]> {
-      const result = await call("trivago-accommodation-radius-search", {
+      const list = await accommodations("trivago-accommodation-radius-search", {
         latitude: q.lat,
         longitude: q.lng,
-        arrival: q.check_in,
-        departure: q.check_out,
-        adults: q.adults,
-        rooms: 1,
-        ...(q.children_ages?.length
-          ? { children: q.children_ages.length, children_ages: q.children_ages.join("-") }
-          : {}),
+        ...occupancy(q),
         ...(q.prefer?.min_stars
           ? {
               hotel_rating: Object.fromEntries(
@@ -69,59 +147,15 @@ export function createTrivagoProvider(
               ),
             }
           : {}),
-        country: "IN",
-        currency: "INR",
-        language: "EN_IN",
       });
-      const fetchedAt = now().toISOString();
-      if (result.isError) {
-        throw new AppError("UPSTREAM_UNAVAILABLE", "trivago reported an error for this search");
-      }
-      const payload = parseUpstream("trivago", Payload, result.structuredContent);
-      if ("validation_errors" in payload) {
-        // trivago reports bad input as data rather than isError.
-        const msg = upstreamText(payload.validation_errors.map((e) => e.message).join("; "));
-        throw new AppError("INVALID_INPUT", `trivago rejected the search: ${msg}`);
-      }
-
-      const nights = nightsBetween(q.check_in, q.check_out);
-      return payload.accommodations
-        .map((a): HotelCandidate => {
-          const perNight = parseAmount(a.price_per_night);
-          const total = parseAmount(a.price_per_stay);
-          return {
-            source: "trivago",
-            source_id: a.accommodation_id,
-            name: a.accommodation_name,
-            lat: a.latitude,
-            lng: a.longitude,
-            stars: a.hotel_rating ? a.hotel_rating : null,
-            rating_10: parseAmount(a.review_rating),
-            review_count: parseAmount(a.review_count),
-            url: a.accommodation_url ?? null,
-            fetched_at: fetchedAt,
-            prices:
-              perNight === null && total === null
-                ? []
-                : [
-                    {
-                      source: "trivago",
-                      seller: a.advertisers?.trim() || null,
-                      per_night: perNight ?? (total as number) / nights,
-                      total,
-                      currency: a.currency,
-                      per_night_inr: null,
-                      includes_taxes: null,
-                      available: null,
-                      refundable: null,
-                      url: a.accommodation_url ?? null,
-                      room: null,
-                      fetched_at: fetchedAt,
-                    },
-                  ],
-          };
-        })
-        .filter((h) => haversineKm(q, h) <= q.radius_km);
+      return toCandidates(list, q).filter((h) => haversineKm(q, h) <= q.radius_km);
+    },
+    async lookup(id, name, context, q) {
+      const list = await accommodations("trivago-accommodation-search", {
+        query: context ? `${name}, ${context}` : name,
+        ...occupancy(q),
+      });
+      return toCandidates(list, q).find((h) => h.source_id === id) ?? null;
     },
   };
 }

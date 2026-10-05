@@ -11,6 +11,7 @@ import {
 import { ProviderRegistry } from "./providers/registry.js";
 import {
   createTrivagoProvider,
+  type TrivagoProvider,
   TRIVAGO_TIMEOUT_MS,
   TRIVAGO_TOOLS,
   TRIVAGO_URL,
@@ -53,6 +54,8 @@ export interface Deps {
   hotelProviders: HotelSearchProvider[];
   /** Per-site price lookups for a single hotel. */
   xotelo: Pick<Xotelo, "rates" | "info">;
+  /** Looks one known hotel up in trivago by name (id-checked). */
+  trivago: Pick<TrivagoProvider, "lookup" | "info">;
   fx: { rates(): Promise<FxRates> };
   gazetteer: Gazetteer;
   travel: TravelDeps;
@@ -130,6 +133,7 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
     registry,
     hotelProviders,
     xotelo,
+    trivago,
     fx,
     gazetteer,
     travel: {
@@ -179,6 +183,7 @@ export function createServer(deps: Deps): McpServer {
     },
     gazetteer: deps.gazetteer,
     xotelo: deps.xotelo,
+    trivago: deps.trivago,
     memory: deps.memory,
     now: deps.now,
   });
