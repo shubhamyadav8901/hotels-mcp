@@ -20,6 +20,7 @@ const q = (source: string, seller: string | null, per_night: number, currency = 
   available: null,
   refundable: null,
   url: null,
+  room: null,
   fetched_at: T,
 });
 const cand = (source: string, id: string, name: string, prices: PriceQuote[]): HotelCandidate => ({

@@ -35,6 +35,8 @@ const ConfigSchema = z.object({
   OTHER_TRAFFIC_MULTIPLIER: z.coerce.number().min(1).max(4).default(1.2),
   TRAIN_BUFFER_MIN: z.coerce.number().int().min(0).max(240).default(30),
   FLIGHT_BUFFER_MIN: z.coerce.number().int().min(0).max(480).default(120),
+  /** Default minimum guest rating (percent) for search_hotels and plan_stays; 0 = no filter. */
+  DEFAULT_MIN_RATING_PCT: z.coerce.number().min(0).max(100).default(0),
   PROVIDER_DEADLINE_MS: z.coerce.number().int().min(2000).max(120_000).default(20_000),
   /** Interface the HTTP mode listens on; the Docker image sets 0.0.0.0. */
   HOST: z.string().default("127.0.0.1"),

@@ -126,7 +126,8 @@ docker compose --profile osrm up -d
 See `.env.example`. Main settings: `HTTP_USER_AGENT`, `SERPAPI_KEY` (optional), `ENABLE_UNOFFICIAL_SOURCES`
 (default `false`; `true` enables Xotelo), `PROVIDERS_DISABLED`, `OSRM_URL`, `OSRM_FOOT_URL`,
 `NOMINATIM_URL`, `PHOTON_URL`, `METRO_TRAFFIC_MULTIPLIER`, `OTHER_TRAFFIC_MULTIPLIER`, `TRAIN_BUFFER_MIN`
-(default 30), `FLIGHT_BUFFER_MIN` (default 120), `PROVIDER_DEADLINE_MS` (default 20000; each source's time
+(default 30), `FLIGHT_BUFFER_MIN` (default 120), `DEFAULT_MIN_RATING_PCT` (default 0 = off; default for the
+`min_rating_pct` filter, which the agent can override per request), `PROVIDER_DEADLINE_MS` (default 20000; each source's time
 limit per search).
 
 HTTP mode only: `PORT` (default 3001), `HOST` (bind address, default `127.0.0.1`; `0.0.0.0` in the Docker
@@ -140,6 +141,15 @@ prices) for four. Xotelo cannot price children, so it counts them as adults. Wit
 HotelsCasa return their cheapest results rather than their most relevant ones. `min_stars` (and, for Google,
 `max_price_inr`) is also applied by those sources on their own price basis, before results are merged. A town or city name (`place:
 "Jaipur"`) searches the town, not its main station.
+
+Guest-rating floor: `min_rating_pct` (e.g. 60 = 6.0/10 = 3.0/5). Its default comes from the server setting
+`DEFAULT_MIN_RATING_PCT` (0, i.e. off, unless you set it) and shows in the tool schema, so an agent can override
+it per request ("at least 80%" → `80`, "include unrated hotels" → `0`). While it is on, hotels no source rates
+are left out, and the notes say how many.
+
+Beds: no source can filter by bed type. Where the source names the room (HotelsCasa), each price carries it in
+`room` (e.g. "Family Room", "Comfort Quadruple Room", or "Deluxe Double Room" with extra beds), so check it
+before booking for four adults.
 
 Example: the cheapest rooms in Jaipur for two adults and two children:
 

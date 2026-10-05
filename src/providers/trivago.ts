@@ -115,6 +115,7 @@ export function createTrivagoProvider(
                       available: null,
                       refundable: null,
                       url: a.accommodation_url ?? null,
+                      room: null,
                       fetched_at: fetchedAt,
                     },
                   ],

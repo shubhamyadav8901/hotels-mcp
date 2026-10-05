@@ -19,6 +19,8 @@ export interface PriceQuote {
   available: boolean | null;
   refundable: boolean | null;
   url: string | null;
+  /** Room as the source names it (e.g. "Family Room with 2 Double Beds"), when the source says. */
+  room: string | null;
   fetched_at: string;
 }
 
@@ -57,7 +59,18 @@ export interface HotelSearchQuery extends LatLng {
    * What the caller will sort and filter by. Sources that support it apply it server-side, so their single
    * page of results is the right page (e.g. Google's cheapest 20 rather than its top 20 by relevance).
    */
-  prefer?: { sort?: "distance" | "price" | "rating"; min_stars?: number; max_price_inr?: number } | undefined;
+  prefer?:
+    | {
+        sort?: "distance" | "price" | "rating";
+        min_stars?: number;
+        max_price_inr?: number;
+        /**
+         * Minimum guest rating on a 0–10 scale. Not sent to sources: each would filter on its own rating and
+         * could drop its (possibly cheapest) price for a hotel whose merged rating passes. Applied after merging.
+         */
+        min_rating_10?: number;
+      }
+    | undefined;
   /** Set when looking up one known hotel: text-only sources then search for this name near `place`. */
   hotel_name?: string | undefined;
 }

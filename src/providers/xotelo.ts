@@ -258,6 +258,7 @@ export function createXotelo(opts: XoteloOptions) {
       available: null,
       refundable: null,
       url: null,
+      room: null,
       fetched_at: fetchedAt,
     }));
   }

@@ -25,6 +25,7 @@ export interface PlanOptions {
   radius_km: number;
   max_price_inr?: number | undefined;
   min_stars?: number | undefined;
+  min_rating_10?: number | undefined;
   candidates: number;
   /** How many rupees an hour of transfer time is worth when trading time against price. */
   value_of_time_inr_per_hour: number;
@@ -145,13 +146,26 @@ export async function planStay(
           children_ages: opts.children_ages,
           place: c.search_name?.name,
           place_is_area: c.search_name?.area,
-          prefer: { sort: "price", min_stars: opts.min_stars, max_price_inr: opts.max_price_inr },
+          prefer: {
+            sort: "price",
+            min_stars: opts.min_stars,
+            max_price_inr: opts.max_price_inr,
+            min_rating_10: opts.min_rating_10,
+          },
         },
-        { sort: "price", max_price_inr: opts.max_price_inr, min_stars: opts.min_stars },
+        {
+          sort: "price",
+          max_price_inr: opts.max_price_inr,
+          min_stars: opts.min_stars,
+          min_rating_10: opts.min_rating_10,
+        },
       ),
     ),
   );
   const seenIds = new Set<string>();
+  const unrated = Math.max(0, ...results.map((r) => r.unrated_hidden));
+  if (unrated > 0)
+    warnings.push(`${unrated} hotels were left out by min_rating_pct because no source rates them.`);
   for (const r of results) {
     for (const f of r.sources_failed) {
       if (!sources_failed.some((x) => x.source === f.source)) sources_failed.push(f);

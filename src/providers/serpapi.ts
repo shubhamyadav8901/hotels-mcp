@@ -218,6 +218,7 @@ function quote(
     available: null,
     refundable: null,
     url,
+    room: null,
     fetched_at: fetchedAt,
   };
 }

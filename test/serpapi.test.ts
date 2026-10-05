@@ -206,3 +206,11 @@ describe("serpapi family and sort parameters", () => {
     expect(urls).toHaveLength(3);
   });
 });
+
+describe("serpapi guest-rating filter", () => {
+  it("is not sent to Google (the floor applies to merged ratings, after merging)", async () => {
+    const { serp, urls } = make();
+    await serp.search({ ...query, prefer: { min_rating_10: 8 } });
+    expect(new URL(urls[0]!).searchParams.has("rating")).toBe(false);
+  });
+});

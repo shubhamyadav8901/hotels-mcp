@@ -167,3 +167,19 @@ describe("occupancy and preferences sent upstream", () => {
     expect(args).not.toHaveProperty("children");
   });
 });
+
+describe("trivago guest-rating filter", () => {
+  it("is not sent to trivago (the floor applies to merged ratings, after merging)", async () => {
+    const call = vi.fn().mockResolvedValue(fixture("trivago-radius-search.json"));
+    await createTrivagoProvider(call, NOW).search({ ...query, prefer: { min_rating_10: 8 } });
+    expect(call.mock.calls[0]?.[1]).not.toHaveProperty("review_rating");
+  });
+});
+
+describe("HotelsCasa room names", () => {
+  it("passes the room name and board through with the price", async () => {
+    const call = vi.fn().mockResolvedValue(fixture("hotelscasa-search.json"));
+    const [first] = await createHotelsCasaProvider(call, { now: NOW }).search(query);
+    expect(first?.prices[0]?.room).toBe("Deluxe Double Room, Room Only");
+  });
+});

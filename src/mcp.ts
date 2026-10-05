@@ -168,6 +168,7 @@ export function createServer(deps: Deps): McpServer {
     travel: deps.travel,
     memory: deps.memory,
     now: deps.now,
+    defaultMinRatingPct: deps.config.DEFAULT_MIN_RATING_PCT,
   });
   registerRatesTool(server, {
     hotels: {
@@ -193,6 +194,7 @@ export function createServer(deps: Deps): McpServer {
     travel: deps.travel,
     retiring: deps.retiring,
     memory: deps.memory,
+    defaultMinRatingPct: deps.config.DEFAULT_MIN_RATING_PCT,
     trainBufferMin: deps.config.TRAIN_BUFFER_MIN,
     flightBufferMin: deps.config.FLIGHT_BUFFER_MIN,
     now: deps.now,

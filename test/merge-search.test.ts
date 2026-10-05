@@ -26,6 +26,7 @@ function price(
     available: null,
     refundable: null,
     url: null,
+    room: null,
     fetched_at: T,
     ...extra,
   };
@@ -159,6 +160,22 @@ describe("searchHotels", () => {
     expect(r.hotels).toHaveLength(2);
     expect(r.fx).toEqual({ date: "2026-10-02", source: "frankfurter" });
     expect(d.registry.status().find((x) => x.id === "frankfurter")?.last_success_at).not.toBeNull();
+  });
+
+  it("filters by minimum guest rating, leaving out and counting unrated hotels", async () => {
+    const rated = { ...near, rating_10: 6.4, review_count: 10 };
+    const low = { ...hotel("a", "9", "Low Rated", 28.644, 77.2194, [price("a", 900)]), rating_10: 5.8 };
+    const unrated = hotel("a", "8", "No Reviews", 28.6436, 77.2196, [price("a", 800)]);
+    const d = deps([provider("a", async () => [rated, low, unrated])]);
+    const r = await searchHotels(d, q, { sort: "price", min_rating_10: 6 });
+    expect(r.hotels.map((h) => h.name)).toEqual(["Near Inn"]);
+    expect(r.unrated_hidden).toBe(1);
+    // Map-only listings (no price) are not counted as "left out for having no rating".
+    const withOsm = deps([
+      provider("a", async () => [rated, unrated, hotel("osm", "1", "Map Only", 28.6437, 77.2197)]),
+    ]);
+    const r2 = await searchHotels(withOsm, q, { sort: "price", min_rating_10: 6, include_unpriced: true });
+    expect(r2.unrated_hidden).toBe(1);
   });
 
   it("returns partial results and names the failed source", async () => {

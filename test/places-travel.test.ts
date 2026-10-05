@@ -244,6 +244,7 @@ describe("travel tools over MCP", () => {
               available: true,
               refundable: true,
               url: null,
+              room: null,
               fetched_at: "t",
             },
           ],

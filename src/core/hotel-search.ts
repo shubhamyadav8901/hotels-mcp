@@ -11,6 +11,8 @@ export type SortKey = "distance" | "price" | "rating";
 export interface SearchOptions {
   max_price_inr?: number | undefined;
   min_stars?: number | undefined;
+  /** Minimum guest rating on a 0–10 scale; hotels with no rating are left out. */
+  min_rating_10?: number | undefined;
   /** Keep hotels with no live price (e.g. OpenStreetMap-only listings). */
   include_unpriced?: boolean | undefined;
   sort: SortKey;
@@ -32,6 +34,8 @@ export interface HotelSearchResult {
   hotels: RankedHotel[];
   /** Hotels left out because no source had a live price for them (when include_unpriced is false). */
   unpriced_hidden: number;
+  /** Hotels left out by min_rating_10 because no source rates them. */
+  unrated_hidden: number;
   sources_ok: string[];
   sources_failed: SourceFailure[];
   fx: { date: string; source: string } | null;
@@ -79,6 +83,13 @@ export async function searchHotels(
     const max = opts.max_price_inr;
     hotels = hotels.filter((h) => h.cheapest !== null && (h.cheapest.per_night_inr as number) <= max);
   }
+  let unrated_hidden = 0;
+  if (opts.min_rating_10 !== undefined) {
+    const min = opts.min_rating_10;
+    // Count only hotels that would otherwise be shown (priced), not map-only listings.
+    unrated_hidden = hotels.filter((h) => h.rating_10 === null && h.cheapest !== null).length;
+    hotels = hotels.filter((h) => h.rating_10 !== null && h.rating_10 >= min);
+  }
   if (opts.min_stars !== undefined) {
     const min = opts.min_stars;
     hotels = hotels.filter((h) => (h.stars ?? 0) >= min);
@@ -94,6 +105,7 @@ export async function searchHotels(
   return {
     hotels,
     unpriced_hidden,
+    unrated_hidden,
     sources_ok,
     sources_failed,
     fx: fx ? { date: fx.date, source: fx.source } : null,

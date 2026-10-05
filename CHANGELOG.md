@@ -9,6 +9,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ### Added
 
 - **Families in one room.** `search_hotels`, `get_hotel_rates` and `plan_stays` take `children_ages` (up to 4 children, ages 0–17) besides `adults`, at most 8 guests. Every source is asked for one room for that party, so results are rooms that fit everyone. Xotelo returns no prices when children are sent, so it counts them as adults (its prices err high, never low); the response says so.
+- **Guest-rating floor:** `min_rating_pct` on `search_hotels` and `plan_stays` (e.g. 60 = 6.0/10), with a server default from `DEFAULT_MIN_RATING_PCT` (0 = off) that the agent can override per request. It applies to the merged guest rating after all sources answer (not at source, where a source would judge by its own rating and could drop its price for a hotel that passes); unrated hotels are left out while it is on, and counted in the notes.
+- **Room names:** prices carry the room as the source names it (`room`, from HotelsCasa), since no source can filter by bed type and "fits four adults" can mean a family room or a double with extra beds.
 - **Cheapest first at the source.** With `sort=price` (or `rating`), Google Hotels and HotelsCasa are asked for their cheapest (or best-rated) results, and minimum stars (and, for Google, the price cap) are applied server-side, so their single page of results is the right page. trivago gets the star filter.
 
 ### Changed

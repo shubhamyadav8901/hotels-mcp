@@ -25,6 +25,7 @@ const QuoteOut = z.object({
   available: z.boolean().nullable(),
   refundable: z.boolean().nullable(),
   url: z.string().nullable(),
+  room: z.string().nullable(),
   fetched_at: z.string(),
 });
 
@@ -47,7 +48,8 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       description:
         "Fetches current prices for one hotel from every source for the given dates and lists them per " +
         "booking site (e.g. Booking.com, Agoda, Trip.com, MakeMyTrip, the hotel's own site), cheapest first, in " +
-        "INR with the original currency, tax status, availability and links. The hotel is a hotel_id from " +
+        "INR with the original currency, tax status, availability, links and, where the source names it, the " +
+        'room type (e.g. "Family Room with 2 Double Beds"). The hotel is a hotel_id from ' +
         "search_hotels or plan_stays, or a name with lat/lng. Does not book.",
       inputSchema: {
         hotel_id: z
@@ -179,6 +181,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           available: p.available,
           refundable: p.refundable,
           url: p.url,
+          room: p.room,
           fetched_at: p.fetched_at,
         }))
         .sort((x, y) => (x.per_night_inr ?? Infinity) - (y.per_night_inr ?? Infinity));

@@ -39,6 +39,8 @@ const Item = z.object({
   available: z.boolean().nullish(),
   refundable: z.boolean().nullish(),
   url: z.string().nullish(),
+  room_name: z.string().nullish(),
+  board: z.string().nullish(),
 });
 
 const Payload = z.object({
@@ -117,6 +119,7 @@ function toCandidate(it: z.infer<typeof Item>, live: boolean, fetchedAt: string)
               available: it.available ?? null,
               refundable: it.refundable ?? null,
               url: it.url ?? null,
+              room: [it.room_name, it.board].filter(Boolean).join(", ") || null,
               fetched_at: fetchedAt,
             },
           ],

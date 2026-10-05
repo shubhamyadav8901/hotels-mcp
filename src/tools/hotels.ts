@@ -7,6 +7,7 @@ import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/ho
 import { travelMatrix, type TravelDeps } from "../core/travel.js";
 import type { PriceQuote } from "../core/types.js";
 import { handle, readOnly } from "./common.js";
+import { minRatingField, pctTo10 } from "./filters.js";
 import { occupancyFields, occupancyNote, validateOccupancy } from "./occupancy.js";
 import { AnchorOut, pointFields } from "./points.js";
 
@@ -25,6 +26,7 @@ const PriceOut = z.object({
   available: z.boolean().nullable(),
   refundable: z.boolean().nullable(),
   url: z.string().nullable(),
+  room: z.string().nullable(),
   fetched_at: z.string(),
 });
 
@@ -70,6 +72,7 @@ const priceOut = (p: PriceQuote): z.infer<typeof PriceOut> => ({
   available: p.available,
   refundable: p.refundable,
   url: p.url,
+  room: p.room,
   fetched_at: p.fetched_at,
 });
 
@@ -89,6 +92,8 @@ const hotelOut = (h: RankedHotel): z.infer<typeof HotelOut> => ({
 });
 
 export interface HotelToolDeps extends HotelSearchDeps {
+  /** Default for min_rating_pct (DEFAULT_MIN_RATING_PCT). */
+  defaultMinRatingPct: number;
   gazetteer: Gazetteer;
   travel: TravelDeps;
   memory: HotelMemory;
@@ -104,7 +109,8 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         "Finds hotels around a place in India for given dates, with live prices from several meta-search " +
         "sources merged per hotel. The place is one of: lat+lng, an Indian Railways station code, an airport " +
         "IATA code, or a place name. Returns each hotel's id, coordinates, straight-line distance, stars, " +
-        "guest rating and cheapest current price in INR (with original currency, seller and source). With " +
+        "guest rating and cheapest current price in INR (with original currency, seller, source and, where the " +
+        "source names it, the room type). Every search is for one room that fits the party. With " +
         "max_drive_minutes, keeps only hotels within that drive time (OpenStreetMap routing with a traffic " +
         "allowance) and adds drive_minutes. Results are paginated. Per-seller prices are in get_hotel_rates; " +
         "times to other places are in compare_hotels. Does not book.",
@@ -119,7 +125,14 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
           .positive()
           .optional()
           .describe("Only hotels with a known nightly price at or below this, in INR."),
-        min_stars: z.number().int().min(1).max(5).optional().describe("Minimum star rating."),
+        min_stars: z
+          .number()
+          .int()
+          .min(1)
+          .max(5)
+          .optional()
+          .describe("Minimum hotel class (official stars)."),
+        min_rating_pct: minRatingField(deps.defaultMinRatingPct),
         include_unpriced: z
           .boolean()
           .default(false)
@@ -171,12 +184,14 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
           sort: a.sort === "drive_time" ? ("distance" as const) : a.sort,
           min_stars: a.min_stars,
           max_price_inr: a.max_price_inr,
+          min_rating_10: pctTo10(a.min_rating_pct),
         },
       };
       const r = await searchHotels(deps, query, {
         sort: a.sort === "drive_time" ? "distance" : a.sort,
         max_price_inr: a.max_price_inr,
         min_stars: a.min_stars,
+        min_rating_10: pctTo10(a.min_rating_pct),
         include_unpriced: true,
       });
       const notes = [
@@ -214,6 +229,11 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         adults: a.adults,
         children_ages: a.children_ages,
       });
+      if (r.unrated_hidden > 0) {
+        notes.push(
+          `${r.unrated_hidden} hotels were left out by min_rating_pct because no source rates them.`,
+        );
+      }
       if (r.sources_ok.includes("osm_lodging")) {
         notes.push("Some locations © OpenStreetMap contributors (ODbL).");
       }

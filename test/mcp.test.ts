@@ -74,6 +74,7 @@ describe("search_hotels tool", () => {
         available: null,
         refundable: null,
         url: null,
+        room: null,
         fetched_at: T,
       },
     ],
@@ -126,5 +127,85 @@ describe("search_hotels tool", () => {
       arguments: { ...args, check_out: "2026-11-09" },
     });
     expect(reversed.isError).toBe(true);
+  });
+});
+
+describe("min_rating_pct default", () => {
+  const T = "2026-10-05T10:00:00.000Z";
+  const quote = (per_night: number) => ({
+    source: "a",
+    seller: null,
+    per_night,
+    total: null,
+    currency: "INR",
+    per_night_inr: null,
+    includes_taxes: null,
+    available: null,
+    refundable: null,
+    url: null,
+    room: null,
+    fetched_at: T,
+  });
+  const cand = (id: string, rating_10: number | null) => ({
+    source: "a",
+    source_id: id,
+    name: `Hotel ${id}`,
+    lat: 28.6435 + Number(id) * 0.0005,
+    lng: 77.2194,
+    stars: 3,
+    rating_10,
+    review_count: rating_10 === null ? null : 10,
+    url: null,
+    prices: [quote(1000 + Number(id))],
+    fetched_at: T,
+  });
+  const provider = {
+    info: {
+      id: "a",
+      name: "a",
+      kind: "hotel-prices" as const,
+      official: true,
+      needsKey: false,
+      limitations: [],
+    },
+    search: async () => [cand("1", 8.5), cand("2", 5.0), cand("3", null)],
+  };
+  async function client(defaultPct: string) {
+    const registry = new ProviderRegistry();
+    registry.register(provider.info);
+    const base = testDeps({ registry, hotelProviders: [provider], now: () => new Date(T) });
+    const { loadConfig } = await import("../src/config.js");
+    return connect({ ...base, config: loadConfig({ DEFAULT_MIN_RATING_PCT: defaultPct }) });
+  }
+  const args = { lat: 28.643, lng: 77.2194, check_in: "2026-11-10", check_out: "2026-11-11" };
+  const names = (r: unknown) =>
+    (r as { structuredContent: { hotels: { name: string }[] } }).structuredContent.hotels.map((h) => h.name);
+
+  it("advertises the server default in the tool schema", async () => {
+    const c = await client("60");
+    const { tools } = await c.listTools();
+    const prop = (
+      tools.find((t) => t.name === "search_hotels")!.inputSchema.properties as Record<
+        string,
+        { default?: number }
+      >
+    ).min_rating_pct;
+    expect(prop?.default).toBe(60);
+  });
+
+  it("applies the default, lets the agent override it, and 0 turns it off", async () => {
+    const c = await client("60");
+    expect(names(await c.callTool({ name: "search_hotels", arguments: args }))).toEqual(["Hotel 1"]);
+    expect(
+      names(await c.callTool({ name: "search_hotels", arguments: { ...args, min_rating_pct: 40 } })),
+    ).toEqual(["Hotel 1", "Hotel 2"]);
+    expect(
+      names(await c.callTool({ name: "search_hotels", arguments: { ...args, min_rating_pct: 0 } })),
+    ).toEqual(["Hotel 1", "Hotel 2", "Hotel 3"]);
+  });
+
+  it("defaults to no filter when the server sets none", async () => {
+    const c = await client("0");
+    expect(names(await c.callTool({ name: "search_hotels", arguments: args }))).toHaveLength(3);
   });
 });

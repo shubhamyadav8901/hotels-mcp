@@ -14,6 +14,7 @@ import {
 import { istDate, parseIstDateTime } from "../core/time.js";
 import type { TravelDeps } from "../core/travel.js";
 import { handle, readOnly } from "./common.js";
+import { minRatingField, pctTo10 } from "./filters.js";
 import { occupancyFields, occupancyNote, validateOccupancy } from "./occupancy.js";
 import { PointInput, pointFields } from "./points.js";
 
@@ -40,6 +41,7 @@ const PointOut = z.object({
 });
 
 export interface StayToolDeps {
+  defaultMinRatingPct: number;
   gazetteer: Gazetteer;
   hotels: HotelSearchDeps;
   travel: TravelDeps;
@@ -80,7 +82,14 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
         ...occupancyFields,
         radius_km: z.number().min(0.5).max(15).default(3).describe("Hotel search radius around each point."),
         max_price_inr: z.number().positive().optional().describe("Maximum nightly price in INR."),
-        min_stars: z.number().int().min(1).max(5).optional(),
+        min_stars: z
+          .number()
+          .int()
+          .min(1)
+          .max(5)
+          .optional()
+          .describe("Minimum hotel class (official stars)."),
+        min_rating_pct: minRatingField(deps.defaultMinRatingPct),
         candidates: z.number().int().min(1).max(8).default(4).describe("Hotels to return per stay."),
         value_of_time_inr_per_hour: z
           .number()
@@ -162,6 +171,7 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
         radius_km: a.radius_km,
         max_price_inr: a.max_price_inr,
         min_stars: a.min_stars,
+        min_rating_10: pctTo10(a.min_rating_pct),
         candidates: a.candidates,
         value_of_time_inr_per_hour: a.value_of_time_inr_per_hour,
         train_buffer_min: deps.trainBufferMin,

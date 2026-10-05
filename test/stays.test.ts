@@ -123,6 +123,7 @@ describe("planStay", () => {
     available: null,
     refundable: null,
     url: null,
+    room: null,
     fetched_at: T,
   });
   const hotel = (id: string, name: string, lat: number, lng: number, price: number): HotelCandidate => ({
@@ -357,6 +358,25 @@ describe("planStay", () => {
       1,
     );
     expect(s.candidates[0]!.name).toBe("Station Inn");
+  });
+
+  it("applies the rating floor and says how many unrated hotels it left out", async () => {
+    const rated = { ...nearStation, rating_10: 8.5 };
+    const unrated = { ...hotel("u", "Unrated Inn", 28.6428, 77.2208, 900), rating_10: null };
+    const { plan } = deps([rated, unrated]);
+    const s = await planStay(
+      plan,
+      {
+        arrive: NDLS,
+        arrive_at: parseIstDateTime("2026-11-10T20:10"),
+        depart: NDLS,
+        depart_at: parseIstDateTime("2026-11-11T09:00"),
+      },
+      { ...opts, min_rating_10: 6 },
+      1,
+    );
+    expect(s.candidates.map((c) => c.name)).toEqual(["Station Inn"]);
+    expect(s.warnings.join(" ")).toMatch(/1 hotels were left out by min_rating_pct/);
   });
 
   it("falls back to price-only ranking and reports it when routing fails", async () => {
