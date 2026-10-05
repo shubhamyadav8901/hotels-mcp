@@ -13,6 +13,7 @@ const query: HotelSearchQuery = {
   check_in: "2026-11-10",
   check_out: "2026-11-11",
   adults: 2,
+  place: "New Delhi railway station",
 };
 
 function make(body: unknown = fixture(), opts: { monthlyQuota?: number; start?: string } = {}) {
@@ -40,7 +41,7 @@ describe("serpapi provider", () => {
     expect(u.origin + u.pathname).toBe("https://serpapi.com/search.json");
     expect(Object.fromEntries(u.searchParams)).toEqual({
       engine: "google_hotels",
-      q: "hotels near 28.6430,77.2194",
+      q: "hotels near New Delhi railway station",
       gl: "in",
       hl: "en",
       currency: "INR",
@@ -74,9 +75,14 @@ describe("serpapi provider", () => {
     ]);
     expect(palace.prices[0]).toMatchObject({ source: "serpapi", currency: "INR", per_night_inr: 2450 });
 
-    // No per-source prices: falls back to the lowest rate, with the seller unknown.
+    // No per-source prices: falls back to Google's headline rate, whose seller Google does not name.
     expect(hotels[1]!.prices).toEqual([
-      expect.objectContaining({ seller: null, per_night: 1320, total: 1320, includes_taxes: null }),
+      expect.objectContaining({
+        seller: "Google Hotels (lowest listed)",
+        per_night: 1320,
+        total: 1320,
+        includes_taxes: null,
+      }),
     ]);
     expect(hotels[1]!.rating_10).toBe(7.6);
   });
@@ -138,5 +144,28 @@ describe("serpapi upstream error text", () => {
     const message = (err as Error).message;
     expect(message).not.toMatch(/\n/);
     expect(message.length).toBeLessThanOrEqual(170);
+  });
+});
+
+describe("serpapi needs a place name", () => {
+  it("refuses coordinate-only searches instead of returning hotels from the wrong city", async () => {
+    const { serp, urls } = make();
+    const { place: _omit, ...coordsOnly } = query;
+    await expect(serp.search(coordsOnly)).rejects.toMatchObject({ code: "NOT_APPLICABLE" });
+    expect(urls).toHaveLength(0);
+  });
+});
+
+describe("serpapi hotel lookups", () => {
+  it("searches for a known hotel by its name with the place as context", async () => {
+    const { serp, urls } = make();
+    await serp.search({ ...query, hotel_name: "Fixture Palace", place: "New Delhi" });
+    expect(new URL(urls[0]!).searchParams.get("q")).toBe("Fixture Palace, New Delhi");
+  });
+
+  it("reports a coordinate-only search as skipped, not failed", async () => {
+    const { serp } = make();
+    const { place: _omit, ...coordsOnly } = query;
+    await expect(serp.search(coordsOnly)).rejects.toMatchObject({ code: "NOT_APPLICABLE" });
   });
 });

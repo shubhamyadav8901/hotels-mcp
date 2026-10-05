@@ -300,3 +300,27 @@ export class Gazetteer {
     return { ...anchor, label: spec.label ?? anchor.code ?? anchor.name };
   }
 }
+
+/**
+ * A readable name for searching near an anchor by text (Google Hotels), or undefined when there is none.
+ * Coordinates get the name of the nearest railway station within 3 km.
+ */
+export function searchPlaceName(anchor: Anchor, gazetteer: Gazetteer): string | undefined {
+  const withContext = (name: string) => (anchor.context ? `${name}, ${anchor.context}` : name);
+  switch (anchor.kind) {
+    case "station":
+      return /\b(station|junction|jn|terminus|central)\b/i.test(anchor.name)
+        ? anchor.name
+        : `${anchor.name} railway station`;
+    case "airport":
+      return withContext(anchor.name);
+    case "bus_station":
+    case "landmark":
+    case "locality":
+      return withContext(anchor.name);
+    case "point": {
+      const near = gazetteer.nearby(anchor).stations.find((s) => s.distance_km <= 3);
+      return near ? searchPlaceName({ ...near, kind: "station" }, gazetteer) : undefined;
+    }
+  }
+}

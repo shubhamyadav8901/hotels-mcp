@@ -21,9 +21,9 @@ Data fetched at run time:
 - Geocoding results from Photon and Nominatim and routes from OSRM are based on
   OpenStreetMap data, © OpenStreetMap contributors (ODbL 1.0).
 - Exchange rates are ECB reference rates served by Frankfurter.
-- Prices come from trivago, HotelsCasa, SerpApi (Google Hotels, optional) and,
-  only when unofficial sources are enabled, Xotelo; each price names its source
-  and seller.
+- Prices come from trivago and HotelsCasa and, only when unofficial sources are
+  enabled, Xotelo and SerpApi (Google Hotels); each price names its source and
+  seller.
 
 This project is not affiliated with or endorsed by trivago, HotelsCasa,
 TripAdvisor, Xotelo, Booking.com, Agoda, MakeMyTrip, IRCTC, Indian Railways,

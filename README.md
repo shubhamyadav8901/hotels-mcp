@@ -32,19 +32,19 @@ All tools are read-only; nothing books, pays or cancels.
 
 ## Data sources
 
-| Need                       | Source                                                                 | Notes                                                                                                 |
-| -------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Live prices                | [trivago official MCP](https://mcp.trivago.com/docs)                   | Free, no key. Cheapest advertiser per hotel (Booking.com, Agoda, MakeMyTrip, …) in INR                |
-| Live prices + availability | [HotelsCasa MCP](https://github.com/hotelscasa/hotelscasa-mcp)         | Free, no key, true radius search. EUR, converted to INR                                               |
-| Live prices (optional)     | [SerpApi Google Hotels](https://serpapi.com/google-hotels-api)         | Needs `SERPAPI_KEY`; 250 free searches/month                                                          |
-| Live prices (unofficial)   | [Xotelo](https://xotelo.com) (derived from TripAdvisor meta-search)    | **Off by default**; enabled only with `ENABLE_UNOFFICIAL_SOURCES=true`. Adds ~8 s per uncached search |
-| FX                         | [Frankfurter](https://frankfurter.dev) (ECB rates)                     | Daily reference rates                                                                                 |
-| Hotel locations            | OpenStreetMap snapshot (bundled)                                       | ~24k hotels/guest houses/hostels; no prices (`include_unpriced`)                                      |
-| Stations, bus stations     | OpenStreetMap snapshot (bundled)                                       | ~9.2k stations with codes, ~5.3k bus stations                                                         |
-| Airports                   | [OurAirports](https://ourairports.com) (bundled)                       | 151 Indian airports                                                                                   |
-| Retiring rooms             | IRCTC public station list (bundled, refreshed by hand)                 | 356 stations; live availability needs a PNR on the IRCTC portal                                       |
-| Geocoding                  | [Photon](https://photon.komoot.io), [Nominatim](https://nominatim.org) | Public instances, cached; Nominatim limited to 1 req/s                                                |
-| Routing                    | [OSRM](https://project-osrm.org)                                       | FOSSGIS public instance by default, ~1 req/s, cached; self-hostable                                   |
+| Need                       | Source                                                                                            | Notes                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Live prices                | [trivago official MCP](https://mcp.trivago.com/docs)                                              | Free, no key. Cheapest advertiser per hotel (Booking.com, Agoda, MakeMyTrip, …) in INR                |
+| Live prices + availability | [HotelsCasa MCP](https://github.com/hotelscasa/hotelscasa-mcp)                                    | Free, no key, true radius search. EUR, converted to INR                                               |
+| Live prices (unofficial)   | [SerpApi Google Hotels](https://serpapi.com/google-hotels-api) (scrapes Google; not a Google API) | **Off by default**; needs `SERPAPI_KEY` and `ENABLE_UNOFFICIAL_SOURCES=true`; 250 free searches/month |
+| Live prices (unofficial)   | [Xotelo](https://xotelo.com) (derived from TripAdvisor meta-search)                               | **Off by default**; enabled only with `ENABLE_UNOFFICIAL_SOURCES=true`. Adds ~8 s per uncached search |
+| FX                         | [Frankfurter](https://frankfurter.dev) (ECB rates)                                                | Daily reference rates                                                                                 |
+| Hotel locations            | OpenStreetMap snapshot (bundled)                                                                  | ~24k hotels/guest houses/hostels; no prices (`include_unpriced`)                                      |
+| Stations, bus stations     | OpenStreetMap snapshot (bundled)                                                                  | ~9.2k stations with codes, ~5.3k bus stations                                                         |
+| Airports                   | [OurAirports](https://ourairports.com) (bundled)                                                  | 151 Indian airports                                                                                   |
+| Retiring rooms             | IRCTC public station list (bundled, refreshed by hand)                                            | 356 stations; live availability needs a PNR on the IRCTC portal                                       |
+| Geocoding                  | [Photon](https://photon.komoot.io), [Nominatim](https://nominatim.org)                            | Public instances, cached; Nominatim limited to 1 req/s                                                |
+| Routing                    | [OSRM](https://project-osrm.org)                                                                  | FOSSGIS public instance by default, ~1 req/s, cached; self-hostable                                   |
 
 Third-party prices are meta-search prices: they can differ at checkout and may exclude GST
 (`includes_taxes: null` means unknown). Every price carries its `source`, `seller` and `fetched_at`.
@@ -53,7 +53,7 @@ in the 8 largest metros and `OTHER_TRAFFIC_MULTIPLIER` (1.2) elsewhere; both raw
 
 None of the free live-price sources has an SLA. Any source can be switched off with `PROVIDERS_DISABLED`,
 and a failing source never fails a search: results come back from the others with `sources_failed` filled in.
-Unofficial sources (currently Xotelo) run only when `ENABLE_UNOFFICIAL_SOURCES=true`; check the terms that apply
+Unofficial sources (Xotelo, and SerpApi's Google Hotels scraper) run only when `ENABLE_UNOFFICIAL_SOURCES=true`; check the terms that apply
 to you first (see [DISCLAIMER.md](DISCLAIMER.md)).
 
 ## Run locally with Docker (recommended)

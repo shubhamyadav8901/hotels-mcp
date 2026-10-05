@@ -46,7 +46,7 @@ src/
     trivago.ts         MCP *client* → mcp.trivago.com/mcp (radius-search); strips photos + system_message
     hotelscasa.ts      MCP *client* → mcp.hotelscasa.com/mcp (lat/lng/radius_km, availability); EUR
     xotelo.ts          HTTP → data.xotelo.com (/list, /rates per OTA); needs TripAdvisor location_key
-    serpapi.ts         optional, needs SERPAPI_KEY; Google Hotels gl=in; 24 h cache; quota counter
+    serpapi.ts         unofficial (scrapes Google): needs SERPAPI_KEY + ENABLE_UNOFFICIAL_SOURCES; gl=in; 24 h cache; quota counter
     osm-lodging.ts     local snapshot of OSM hotels/guest houses/hostels (no prices; fills coverage)
     photon.ts, nominatim.ts   geocoding (Nominatim at 1 req/s, real User-Agent)
     osrm.ts            route + table (FOSSGIS public + cache by default; OSRM_URL for self-hosted)
@@ -159,7 +159,7 @@ lat/lng that Claude got anywhere, and every hotel output includes lat/lng.
 
 ## 9. Config (env)
 
-`SERPAPI_KEY` (optional), `OSRM_URL`, `NOMINATIM_URL`, `PHOTON_URL`, `HTTP_USER_AGENT` (required for
+`SERPAPI_KEY` (optional; also needs `ENABLE_UNOFFICIAL_SOURCES=true`), `OSRM_URL`, `NOMINATIM_URL`, `PHOTON_URL`, `HTTP_USER_AGENT` (required for
 Nominatim), `PROVIDERS_DISABLED` (comma list), `METRO_TRAFFIC_MULTIPLIER`, `OTHER_TRAFFIC_MULTIPLIER`,
 `TRAIN_BUFFER_MIN`, `FLIGHT_BUFFER_MIN`. Secrets live only in `.env`.
 

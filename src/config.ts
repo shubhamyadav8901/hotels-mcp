@@ -22,7 +22,7 @@ const ConfigSchema = z.object({
     .default("india-hotels-mcp/0.1 (+https://github.com/shubhamyadav8901/hotels-mcp)"),
   SERPAPI_KEY: optionalString,
   PROVIDERS_DISABLED: csv,
-  /** Unofficial third-party endpoints (currently Xotelo) run only when this is true. */
+  /** Unofficial sources (Xotelo, and SerpApi's Google Hotels scraper) run only when this is true. */
   ENABLE_UNOFFICIAL_SOURCES: z
     .enum(["true", "false", "1", "0", ""])
     .optional()

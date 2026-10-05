@@ -4,6 +4,17 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-05
+
+### Changed
+
+- **SerpApi is now an unofficial, opt-in source.** SerpApi is not a Google API: it scrapes Google Hotels pages, which Google's terms forbid and which Google has challenged in court. It now needs `ENABLE_UNOFFICIAL_SOURCES=true` as well as `SERPAPI_KEY`, and `get_data_sources`, the README and DISCLAIMER.md say how it gets its data.
+
+### Fixed
+
+- **Google Hotels searches near the right place.** Google ignores coordinates in a text query (a live test near New Delhi station returned hotels over 1,000 km away), so SerpApi now searches by place name: a station's or airport's name, a landmark with its city, or for coordinates the nearest railway station within 3 km. A search with no usable name skips SerpApi (`NOT_APPLICABLE` in `sources_failed`) instead of returning hotels from another city. `get_hotel_rates` looks the hotel up by its own name. Live, near New Delhi station: 20 of 20 results within 2 km.
+- Google's headline rate is labelled "Google Hotels (lowest listed)" rather than with no seller.
+
 ## [0.1.0] - 2026-10-05
 
 The first public release.
@@ -28,5 +39,6 @@ The first public release.
 - **Bundled data:** OpenStreetMap snapshots of ~9.2k railway stations with codes, ~5.3k bus stations and ~24k lodging places (ODbL), 151 Indian airports from OurAirports (public domain), and IRCTC's public retiring-room station list (356 stations). Rebuilt with `npm run build:data`; the IRCTC list only with the manual `--with-irctc` flag.
 - **Packaging and checks:** Dockerfile and docker compose for local use, unit and MCP protocol tests on synthetic fixtures, and a live acceptance smoke test (`npm run smoke`).
 
-[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/shubhamyadav8901/hotels-mcp/releases/tag/v0.1.0

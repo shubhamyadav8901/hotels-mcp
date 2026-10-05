@@ -13,9 +13,9 @@ import { addDays, istClock, istDate, istIso } from "./time.js";
 import { travelMatrix, type TravelDeps } from "./travel.js";
 
 export interface StayRequest {
-  arrive: Anchor & { label: string };
+  arrive: Anchor & { label: string; search_name?: string | undefined };
   arrive_at: Date;
-  depart: Anchor & { label: string };
+  depart: Anchor & { label: string; search_name?: string | undefined };
   depart_at: Date;
 }
 
@@ -141,6 +141,7 @@ export async function planStay(
           check_in: checkIn,
           check_out: checkOut,
           adults: opts.adults,
+          place: c.search_name,
         },
         { sort: "price", max_price_inr: opts.max_price_inr, min_stars: opts.min_stars },
       ),

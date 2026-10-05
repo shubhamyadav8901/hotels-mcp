@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { SERVER_NAME, SERVER_VERSION } from "./version.js";
 import type { Config } from "./config.js";
 import { createFx } from "./providers/fx.js";
 import {
@@ -44,8 +45,7 @@ import { registerRatesTool } from "./tools/rates.js";
 import { registerTravelTools } from "./tools/travel.js";
 import { registerSourcesTool } from "./tools/sources.js";
 
-export const SERVER_NAME = "india-hotels";
-export const SERVER_VERSION = "0.1.0";
+export { SERVER_NAME, SERVER_VERSION } from "./version.js";
 
 export interface Deps {
   config: Config;
@@ -176,6 +176,7 @@ export function createServer(deps: Deps): McpServer {
       fx: deps.fx,
       deadlineMs: deps.config.PROVIDER_DEADLINE_MS,
     },
+    gazetteer: deps.gazetteer,
     xotelo: deps.xotelo,
     memory: deps.memory,
     now: deps.now,

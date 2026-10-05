@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { Gazetteer } from "../core/anchors.js";
 import { AppError, toAppError } from "../core/errors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
 import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/hotel-search.js";
@@ -28,6 +29,7 @@ const QuoteOut = z.object({
 
 export interface RatesToolDeps {
   hotels: HotelSearchDeps;
+  gazetteer: Gazetteer;
   xotelo: Pick<Xotelo, "rates" | "info">;
   memory: HotelMemory;
   now: () => Date;
@@ -111,6 +113,9 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           check_in: a.check_in,
           check_out: a.check_out,
           adults: a.adults,
+          // Text-only sources look the hotel up by name, with the nearest station for city context.
+          hotel_name: target.name,
+          place: deps.gazetteer.nearby(target).stations[0]?.name,
         },
         { sort: "distance", include_unpriced: true },
       );

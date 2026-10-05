@@ -44,4 +44,11 @@ export interface HotelSearchQuery extends LatLng {
   check_out: string;
   /** Guests in the single room searched for; every source is asked for one room. */
   adults: number;
+  /**
+   * Readable name of the search point (e.g. "New Delhi railway station, Delhi"), for sources that search by
+   * text only. Google Hotels ignores coordinates in a query, so without a name it cannot search near a point.
+   */
+  place?: string | undefined;
+  /** Set when looking up one known hotel: text-only sources then search for this name near `place`. */
+  hotel_name?: string | undefined;
 }

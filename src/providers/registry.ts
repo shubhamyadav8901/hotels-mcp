@@ -27,7 +27,9 @@ export class ProviderRegistry {
     let disabledReason: string | null = null;
     if (this.disabledIds.includes(info.id)) disabledReason = "disabled by PROVIDERS_DISABLED";
     else if (!info.official && !this.allowUnofficial) {
-      disabledReason = "unofficial source; set ENABLE_UNOFFICIAL_SOURCES=true to use it";
+      disabledReason = opts.missingKey
+        ? "unofficial source and API key not configured; set ENABLE_UNOFFICIAL_SOURCES=true and the key to use it"
+        : "unofficial source; set ENABLE_UNOFFICIAL_SOURCES=true to use it";
     } else if (opts.missingKey) disabledReason = "API key not configured";
     this.entries.set(info.id, {
       info,

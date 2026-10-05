@@ -4,6 +4,7 @@ import {
   StreamableHTTPError,
 } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { AppError, upstreamText } from "../core/errors.js";
+import { SERVER_NAME, SERVER_VERSION } from "../version.js";
 
 /** The parts of a CallToolResult we read from upstream servers. */
 export interface UpstreamResult {
@@ -70,7 +71,7 @@ export class UpstreamMcpClient {
     if (this.client) return this.client;
     if (!this.connecting) {
       this.connecting = (async () => {
-        const client = new Client({ name: "india-hotels-mcp", version: "0.1.0" });
+        const client = new Client({ name: `${SERVER_NAME}-mcp`, version: SERVER_VERSION });
         const transport = new StreamableHTTPClientTransport(new URL(this.url), {
           requestInit: { headers: { "User-Agent": this.userAgent } },
         });

@@ -8,18 +8,22 @@ import { parseUpstream } from "./shared.js";
 import type { HotelSearchProvider, ProviderInfo } from "./types.js";
 
 export const SERPAPI_URL = "https://serpapi.com/search.json";
+const GOOGLE_LOWEST = "Google Hotels (lowest listed)";
 const CACHE_TTL_MS = 24 * 3_600_000;
 const TIMEOUT_MS = 20_000;
 
 export const SERPAPI_INFO: ProviderInfo = {
   id: "serpapi",
-  name: "Google Hotels via SerpApi",
+  name: "Google Hotels via SerpApi (unofficial scraper)",
   kind: "hotel-prices",
-  official: true,
+  // SerpApi is an independent company that scrapes Google's result pages; Google's terms forbid automated
+  // querying and Google has sued SerpApi over it. Treated as unofficial: it needs ENABLE_UNOFFICIAL_SOURCES.
+  official: false,
   needsKey: true,
   limitations: [
+    "Not a Google API: SerpApi (an independent company) scrapes Google Hotels pages; Google's terms forbid automated querying and Google has sued SerpApi.",
     "Free plan allows 250 searches a month (50 an hour); results are cached for 24 h to save quota.",
-    "Google Hotels takes a text query only (no radius), so results are filtered by distance afterwards.",
+    "Google Hotels searches by place name only (it ignores coordinates), so results are filtered by distance afterwards.",
     "Prices are Google Hotels meta-search prices and can differ at checkout.",
   ],
 };
@@ -79,7 +83,7 @@ export function serpApiUrl(q: HotelSearchQuery, apiKey: string, baseUrl = SERPAP
   const url = new URL(baseUrl);
   const params: Record<string, string> = {
     engine: "google_hotels",
-    q: `hotels near ${q.lat.toFixed(4)},${q.lng.toFixed(4)}`,
+    q: q.hotel_name ? [q.hotel_name, q.place].filter(Boolean).join(", ") : `hotels near ${q.place}`,
     gl: "in",
     hl: "en",
     currency: "INR",
@@ -109,7 +113,7 @@ export function createSerpApi(opts: SerpApiOptions) {
   }
 
   async function fetchProps(q: HotelSearchQuery): Promise<{ props: Prop[]; fetchedAt: string }> {
-    const key = `${q.lat.toFixed(3)},${q.lng.toFixed(3)}:${q.check_in}:${q.check_out}:${q.adults}`;
+    const key = `${q.hotel_name ?? ""}|${q.place}@${q.lat.toFixed(3)},${q.lng.toFixed(3)}:${q.check_in}:${q.check_out}:${q.adults}`;
     return cache.getOrSet(key, CACHE_TTL_MS, async () => {
       if (quotaRemaining() <= 0) {
         throw new AppError(
@@ -135,6 +139,14 @@ export function createSerpApi(opts: SerpApiOptions) {
   }
 
   async function search(q: HotelSearchQuery): Promise<HotelCandidate[]> {
+    if (!q.place && !q.hotel_name) {
+      // Google Hotels ignores coordinates in a text query (it returned hotels 1,000+ km away in testing).
+      throw new AppError(
+        "NOT_APPLICABLE",
+        "Skipped: Google Hotels searches by place name, and this search has only coordinates with no station within 3 km",
+        "Search by station_code, iata or place to include Google Hotels prices.",
+      );
+    }
     const { props, fetchedAt } = await fetchProps(q);
     return props.flatMap((p): HotelCandidate[] => {
       if (!p.gps_coordinates) return [];
@@ -199,7 +211,8 @@ function quotes(p: Prop, fetchedAt: string): PriceQuote[] {
     .map((s) => quote(s.source, s.rate_per_night, s.total_rate, s.link ?? p.link ?? null, fetchedAt))
     .filter((x): x is PriceQuote => x !== null);
   if (perSource.length) return perSource;
-  const lowest = quote(null, p.rate_per_night, p.total_rate, p.link ?? null, fetchedAt);
+  // Google's headline rate doesn't say which site offers it.
+  const lowest = quote(GOOGLE_LOWEST, p.rate_per_night, p.total_rate, p.link ?? null, fetchedAt);
   return lowest ? [lowest] : [];
 }
 

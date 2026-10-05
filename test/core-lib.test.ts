@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { AppError } from "../src/core/errors.js";
@@ -154,5 +155,54 @@ describe("upstreamText", () => {
     expect(toAppError(new TypeError("x is undefined")).code).toBe("INTERNAL_ERROR");
     expect(toAppError(new Error("socket hang up")).code).toBe("UPSTREAM_UNAVAILABLE");
     spy.mockRestore();
+  });
+});
+
+describe("SerpApi is unofficial", () => {
+  it("stays disabled with a key unless ENABLE_UNOFFICIAL_SOURCES is true", async () => {
+    const { SERPAPI_INFO } = await import("../src/providers/serpapi.js");
+    expect(SERPAPI_INFO.official).toBe(false);
+    const off = new ProviderRegistry([], () => new Date(), false);
+    off.register(SERPAPI_INFO, { missingKey: false });
+    expect(off.status()[0]).toMatchObject({
+      enabled: false,
+      disabled_reason: expect.stringMatching(/ENABLE_UNOFFICIAL_SOURCES/),
+    });
+    const on = new ProviderRegistry([], () => new Date(), true);
+    on.register(SERPAPI_INFO, { missingKey: false });
+    expect(on.isEnabled("serpapi")).toBe(true);
+  });
+});
+
+describe("version", () => {
+  it("matches package.json", async () => {
+    const { SERVER_VERSION } = await import("../src/version.js");
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+      version: string;
+    };
+    expect(SERVER_VERSION).toBe(pkg.version);
+  });
+});
+
+describe("createDeps wiring for SerpApi", () => {
+  it("does not enable SerpApi with a key unless unofficial sources are on", async () => {
+    const { createDeps } = await import("../src/mcp.js");
+    const status = (env: Record<string, string>) =>
+      createDeps(loadConfig(env))
+        .registry.status()
+        .find((p) => p.id === "serpapi");
+    expect(status({ SERPAPI_KEY: "k" })).toMatchObject({
+      enabled: false,
+      disabled_reason: expect.stringMatching(/ENABLE_UNOFFICIAL/),
+    });
+    expect(status({})).toMatchObject({
+      enabled: false,
+      disabled_reason: expect.stringMatching(/ENABLE_UNOFFICIAL.*key/),
+    });
+    expect(status({ ENABLE_UNOFFICIAL_SOURCES: "true" })).toMatchObject({
+      enabled: false,
+      disabled_reason: "API key not configured",
+    });
+    expect(status({ SERPAPI_KEY: "k", ENABLE_UNOFFICIAL_SOURCES: "true" })).toMatchObject({ enabled: true });
   });
 });

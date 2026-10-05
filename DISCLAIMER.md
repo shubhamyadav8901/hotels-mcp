@@ -6,7 +6,12 @@
 
 **Nothing is booked.** All tools are read-only. The server has no booking, payment or cancellation functionality, and upstream MCP servers are called only through an allow-list of read-only tools, so side-effecting tools they may offer are never reachable.
 
-**Unofficial sources are off by default, and using them is your responsibility.** The Xotelo adapter uses an unofficial API derived from TripAdvisor meta-search, whose terms of use may restrict this kind of access. It is disabled unless you set `ENABLE_UNOFFICIAL_SOURCES=true`. Before enabling it, check the terms that apply and make sure your use is permitted. The other live sources are first-party endpoints (trivago's official MCP server, HotelsCasa's own MCP endpoint), public services used within their published usage policies (Photon, Nominatim at no more than 1 request per second with an identifying `HTTP_USER_AGENT`, the FOSSGIS OSRM instance, Frankfurter), or an optional paid API you configure yourself (SerpApi Google Hotels, `SERPAPI_KEY`, 250 free searches per month). Keep request volumes low; the built-in rate limits and caches exist for that reason, and heavy routing use should go to a self-hosted OSRM.
+**Unofficial sources are off by default, and using them is your responsibility.** Two adapters are unofficial and are disabled unless you set `ENABLE_UNOFFICIAL_SOURCES=true`:
+
+- **Xotelo** is an unofficial API derived from TripAdvisor meta-search, whose terms of use may restrict this kind of access.
+- **SerpApi** (Google Hotels) also needs your own `SERPAPI_KEY`. SerpApi is an independent company, not Google; by its own description it retrieves Google's public result pages with its own browsers, proxies and CAPTCHA solving. Google's terms of service forbid automated querying, and Google sued SerpApi in December 2025; a federal court dismissed Google's DMCA claims in July 2026 with leave to amend, so the dispute may continue. SerpApi's own terms and "Legal Shield" cover how it collects data, not how you use it.
+
+Before enabling them, check the terms that apply and make sure your use is permitted. The other live sources are first-party endpoints (trivago's official MCP server, HotelsCasa's own MCP endpoint), or public services used within their published usage policies (Photon, Nominatim at no more than 1 request per second with an identifying `HTTP_USER_AGENT`, the FOSSGIS OSRM instance, Frankfurter). Keep request volumes low; the built-in rate limits and caches exist for that reason, and heavy routing use should go to a self-hosted OSRM.
 
 **Bundled data.**
 

@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { Gazetteer } from "../core/anchors.js";
+import { searchPlaceName, type Gazetteer } from "../core/anchors.js";
 import { AppError } from "../core/errors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
 import type { HotelSearchDeps } from "../core/hotel-search.js";
@@ -152,7 +152,12 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
           deps.gazetteer.resolvePoint(s.arrive),
           deps.gazetteer.resolvePoint(s.depart),
         ]);
-        requests.push({ arrive, arrive_at, depart, depart_at });
+        requests.push({
+          arrive: { ...arrive, search_name: searchPlaceName(arrive, deps.gazetteer) },
+          arrive_at,
+          depart: { ...depart, search_name: searchPlaceName(depart, deps.gazetteer) },
+          depart_at,
+        });
       }
 
       const opts = {

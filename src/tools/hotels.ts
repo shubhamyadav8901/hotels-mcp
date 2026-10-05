@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { AppError, toAppError } from "../core/errors.js";
-import type { Anchor, Gazetteer } from "../core/anchors.js";
+import { searchPlaceName, type Anchor, type Gazetteer } from "../core/anchors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
 import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/hotel-search.js";
 import { travelMatrix, type TravelDeps } from "../core/travel.js";
@@ -166,6 +166,7 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         check_in: a.check_in,
         check_out: a.check_out,
         adults: a.adults,
+        place: searchPlaceName(anchor, deps.gazetteer),
       };
       const r = await searchHotels(deps, query, {
         sort: a.sort === "drive_time" ? "distance" : a.sort,

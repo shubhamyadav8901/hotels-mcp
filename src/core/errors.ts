@@ -7,6 +7,8 @@ export type ErrorCode =
   | "QUOTA_EXHAUSTED"
   | "DISABLED"
   | "TIMEOUT"
+  /** The source was skipped because it cannot answer this kind of request (not a failure). */
+  | "NOT_APPLICABLE"
   | "INTERNAL_ERROR";
 
 /** An error whose message is safe to show to the model, with a code and a next-step hint. */

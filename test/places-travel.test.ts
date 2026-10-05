@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Gazetteer } from "../src/core/anchors.js";
+import { Gazetteer, searchPlaceName } from "../src/core/anchors.js";
 import { HotelMemory } from "../src/core/hotel-memory.js";
 import type { AirportRow, BusStationRow, StationRow } from "../src/data/datasets.js";
 import type { GeocodeHit } from "../src/providers/geocoders.js";
@@ -116,6 +116,37 @@ describe("Gazetteer", () => {
       label: "fly out",
       code: "DEL",
     });
+  });
+});
+
+describe("searchPlaceName", () => {
+  const { g } = gazetteer();
+  const base = { code: null, context: null, source: "t" };
+
+  it("names stations, airports and landmarks for text search", () => {
+    expect(searchPlaceName(g.station("NDLS")!, g)).toBe("New Delhi railway station");
+    expect(searchPlaceName(g.station("DLI")!, g)).toBe("Delhi Junction");
+    expect(searchPlaceName(g.airport("DEL")!, g)).toBe("Indira Gandhi International Airport, New Delhi");
+    expect(
+      searchPlaceName(
+        {
+          ...base,
+          kind: "landmark",
+          name: "Taj Mahal",
+          context: "Agra, Uttar Pradesh",
+          lat: 27.17,
+          lng: 78.04,
+        },
+        g,
+      ),
+    ).toBe("Taj Mahal, Agra, Uttar Pradesh");
+  });
+
+  it("names coordinates after the nearest station within 3 km, else gives none", () => {
+    expect(searchPlaceName({ ...base, kind: "point", name: "p", lat: 28.643, lng: 77.2194 }, g)).toBe(
+      "New Delhi railway station",
+    );
+    expect(searchPlaceName({ ...base, kind: "point", name: "p", lat: 20, lng: 80 }, g)).toBeUndefined();
   });
 });
 
