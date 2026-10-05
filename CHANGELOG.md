@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-06
+
 ### Changed
 
 - **Results by source.** Each hotel in `search_hotels` has a `sources` section per source with that source's own name, rating and review count, stars, property type, area, amenities, check-in/out times, usual price range, hotel link and its offers (booking site, price, total, taxes, refundability, availability, room, meals, link), cheapest source first; up to 3 offers per source there, all of them in `get_hotel_rates`, which now groups its offers the same way instead of a flat `prices` list. `cheapest` is a short summary (price, source, booking site, link).
@@ -16,6 +18,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ### Fixed
 
+- **Children with trivago.** trivago accepts children's ages but prices every child as 6 years old (checked live: ages 5 and 9, or 10 and 12, all come back as age 6); the notes now say so whenever children are given, as they already did for Xotelo pricing children as adults.
 - **Google tax flag.** A Google price was marked as including taxes whenever Google gave a pre-tax figure, even when the two were equal; it is now marked only when the pre-tax figure is lower, and unknown otherwise.
 
 ## [0.2.0] - 2026-10-05
@@ -78,7 +81,8 @@ The first public release.
 - **Bundled data:** OpenStreetMap snapshots of ~9.2k railway stations with codes, ~5.3k bus stations and ~24k lodging places (ODbL), 151 Indian airports from OurAirports (public domain), and IRCTC's public retiring-room station list (356 stations). Rebuilt with `npm run build:data`; the IRCTC list only with the manual `--with-irctc` flag.
 - **Packaging and checks:** Dockerfile and docker compose for local use, unit and MCP protocol tests on synthetic fixtures, and a live acceptance smoke test (`npm run smoke`).
 
-[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/shubhamyadav8901/hotels-mcp/releases/tag/v0.1.0
