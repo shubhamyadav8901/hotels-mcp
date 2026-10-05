@@ -30,7 +30,7 @@ npm run format      # Prettier (CI runs format:check)
 npm run dev         # watch mode, stdio
 ```
 
-`docker compose up -d --build` runs the HTTP server as users do (`http://localhost:3000/mcp`, health at `/health`). See the [README](README.md) for configuration and connecting Claude.
+`docker compose up -d --build` runs the HTTP server as users do (`http://localhost:3001/mcp`, health at `/healthz`). See the [README](README.md) for configuration and connecting Claude.
 
 ## Making a change
 

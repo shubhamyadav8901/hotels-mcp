@@ -32,19 +32,19 @@ All tools are read-only; nothing books, pays or cancels.
 
 ## Data sources
 
-| Need                       | Source                                                                 | Notes                                                                                  |
-| -------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Live prices                | [trivago official MCP](https://mcp.trivago.com/docs)                   | Free, no key. Cheapest advertiser per hotel (Booking.com, Agoda, MakeMyTrip, …) in INR |
-| Live prices + availability | [HotelsCasa MCP](https://github.com/hotelscasa/hotelscasa-mcp)         | Free, no key, true radius search. EUR, converted to INR                                |
-| Live prices (optional)     | [SerpApi Google Hotels](https://serpapi.com/google-hotels-api)         | Needs `SERPAPI_KEY`; 250 free searches/month                                           |
-| Live prices (unofficial)   | [Xotelo](https://xotelo.com) (derived from TripAdvisor meta-search)    | **Off by default**; enabled only with `ENABLE_UNOFFICIAL_SOURCES=true`                 |
-| FX                         | [Frankfurter](https://frankfurter.dev) (ECB rates)                     | Daily reference rates                                                                  |
-| Hotel locations            | OpenStreetMap snapshot (bundled)                                       | ~24k hotels/guest houses/hostels; no prices (`include_unpriced`)                       |
-| Stations, bus stations     | OpenStreetMap snapshot (bundled)                                       | ~9.2k stations with codes, ~5.3k bus stations                                          |
-| Airports                   | [OurAirports](https://ourairports.com) (bundled)                       | 151 Indian airports                                                                    |
-| Retiring rooms             | IRCTC public station list (bundled, refreshed by hand)                 | 356 stations; live availability needs a PNR on the IRCTC portal                        |
-| Geocoding                  | [Photon](https://photon.komoot.io), [Nominatim](https://nominatim.org) | Public instances, cached; Nominatim limited to 1 req/s                                 |
-| Routing                    | [OSRM](https://project-osrm.org)                                       | FOSSGIS public instance by default, ~1 req/s, cached; self-hostable                    |
+| Need                       | Source                                                                 | Notes                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Live prices                | [trivago official MCP](https://mcp.trivago.com/docs)                   | Free, no key. Cheapest advertiser per hotel (Booking.com, Agoda, MakeMyTrip, …) in INR                |
+| Live prices + availability | [HotelsCasa MCP](https://github.com/hotelscasa/hotelscasa-mcp)         | Free, no key, true radius search. EUR, converted to INR                                               |
+| Live prices (optional)     | [SerpApi Google Hotels](https://serpapi.com/google-hotels-api)         | Needs `SERPAPI_KEY`; 250 free searches/month                                                          |
+| Live prices (unofficial)   | [Xotelo](https://xotelo.com) (derived from TripAdvisor meta-search)    | **Off by default**; enabled only with `ENABLE_UNOFFICIAL_SOURCES=true`. Adds ~8 s per uncached search |
+| FX                         | [Frankfurter](https://frankfurter.dev) (ECB rates)                     | Daily reference rates                                                                                 |
+| Hotel locations            | OpenStreetMap snapshot (bundled)                                       | ~24k hotels/guest houses/hostels; no prices (`include_unpriced`)                                      |
+| Stations, bus stations     | OpenStreetMap snapshot (bundled)                                       | ~9.2k stations with codes, ~5.3k bus stations                                                         |
+| Airports                   | [OurAirports](https://ourairports.com) (bundled)                       | 151 Indian airports                                                                                   |
+| Retiring rooms             | IRCTC public station list (bundled, refreshed by hand)                 | 356 stations; live availability needs a PNR on the IRCTC portal                                       |
+| Geocoding                  | [Photon](https://photon.komoot.io), [Nominatim](https://nominatim.org) | Public instances, cached; Nominatim limited to 1 req/s                                                |
+| Routing                    | [OSRM](https://project-osrm.org)                                       | FOSSGIS public instance by default, ~1 req/s, cached; self-hostable                                   |
 
 Third-party prices are meta-search prices: they can differ at checkout and may exclude GST
 (`includes_taxes: null` means unknown). Every price carries its `source`, `seller` and `fetched_at`.
@@ -56,47 +56,60 @@ and a failing source never fails a search: results come back from the others wit
 Unofficial sources (currently Xotelo) run only when `ENABLE_UNOFFICIAL_SOURCES=true`; check the terms that apply
 to you first (see [DISCLAIMER.md](DISCLAIMER.md)).
 
-## Setup
+## Run locally with Docker (recommended)
+
+```bash
+git clone https://github.com/shubhamyadav8901/hotels-mcp.git && cd hotels-mcp
+cp .env.example .env                # set HTTP_USER_AGENT (app name + contact, Nominatim policy)
+docker compose up -d --build        # http://localhost:3001/mcp
+curl -s localhost:3001/healthz      # {"status":"ok",...}
+```
+
+Or run the prebuilt image (amd64 and arm64, published for each release) without cloning:
+
+```bash
+docker run -d --name india-hotels-mcp --restart unless-stopped \
+  -p 127.0.0.1:3001:3001 -e HTTP_USER_AGENT="india-hotels-mcp (+https://github.com/you)" \
+  ghcr.io/shubhamyadav8901/hotels-mcp:latest
+```
+
+Add `--env-file .env` to pass optional settings. The bundled datasets (`data/*.json.gz`) are in the repository
+and the image; rebuilding them is optional (see "Rebuilding the bundled data"). Run `docker compose up -d`
+after changing `.env`. The server listens on port 3001 (so it can run next to other local MCP servers on
+3000), bound to `127.0.0.1` only.
+
+Connect Claude Code:
+
+```bash
+claude mcp add --transport http india-hotels http://localhost:3001/mcp
+```
+
+Claude Desktop and claude.ai connect to remote URLs only (Settings → Connectors); expose the server through a
+tunnel and add its hostname to `ALLOWED_HOSTS`. The HTTP server has no authentication, so put your own access
+control in front of any tunnel.
+
+Inspect or test:
+
+```bash
+npx @modelcontextprotocol/inspector --cli http://localhost:3001/mcp --transport http --method tools/list
+```
+
+### Without Docker
 
 Requires Node 22+.
 
-```sh
-npm install
+```bash
+npm ci
 npm run build
-cp .env.example .env   # set HTTP_USER_AGENT to your app name + contact (Nominatim policy)
+npm start -- --http                 # HTTP on http://localhost:3001/mcp
 ```
 
-### Claude Code
+Or let Claude Code start it over stdio:
 
-```sh
-claude mcp add --transport stdio --env HTTP_USER_AGENT="india-hotels-mcp/0.1 (you@example.com)" india-hotels -- node /path/to/hotels-mcp/dist/src/server.js
+```bash
+claude mcp add --transport stdio --env HTTP_USER_AGENT="india-hotels-mcp (+https://github.com/you)" \
+  india-hotels -- node /path/to/hotels-mcp/dist/src/server.js
 ```
-
-### Claude Desktop
-
-```json
-{
-  "mcpServers": {
-    "india-hotels": {
-      "command": "node",
-      "args": ["/path/to/hotels-mcp/dist/src/server.js"],
-      "env": { "HTTP_USER_AGENT": "india-hotels-mcp/0.1 (you@example.com)" }
-    }
-  }
-}
-```
-
-### HTTP (Docker)
-
-```sh
-docker compose up -d hotels-mcp       # Streamable HTTP at http://localhost:3000/mcp, health at /health
-```
-
-Add it to Claude as a custom connector with that URL (through a tunnel for claude.ai). The HTTP server has
-no authentication; keep it on localhost or a private network. Outside Docker it binds `127.0.0.1` by default
-(`HOST`); the Docker image sets `HOST=0.0.0.0` and compose publishes it only on `127.0.0.1:3000`. DNS-rebinding
-protection rejects requests whose `Host` hostname is not in `ALLOWED_HOSTS` (default: `localhost`, `127.0.0.1`,
-`[::1]`, any port); add your tunnel's hostname there if you use one.
 
 ### Self-hosted routing (optional)
 
@@ -114,11 +127,12 @@ See `.env.example`. Main settings: `HTTP_USER_AGENT`, `SERPAPI_KEY` (optional), 
 (default `false`; `true` enables Xotelo), `PROVIDERS_DISABLED`, `OSRM_URL`, `OSRM_FOOT_URL`,
 `NOMINATIM_URL`, `PHOTON_URL`, `METRO_TRAFFIC_MULTIPLIER`, `OTHER_TRAFFIC_MULTIPLIER`, `TRAIN_BUFFER_MIN`
 (default 30), `FLIGHT_BUFFER_MIN` (default 120), `PROVIDER_DEADLINE_MS` (default 20000; each source's time
-limit per search), `CACHE_DIR`.
+limit per search).
 
-HTTP mode only: `PORT` (default 3000), `HOST` (bind address, default `127.0.0.1`; `0.0.0.0` in the Docker
-image) and `ALLOWED_HOSTS` (comma-separated hostnames accepted in the `Host` header, any port; default
-`localhost`, `127.0.0.1` and `[::1]`).
+HTTP mode only: `PORT` (default 3001), `HOST` (bind address, default `127.0.0.1`; `0.0.0.0` in the Docker
+image) and `ALLOWED_HOSTS` (comma-separated extra hostnames accepted in the `Host` header, any port;
+`localhost`, `127.0.0.1` and `[::1]` are always accepted). Under docker compose, `PORT` and `HOST` are fixed by
+`docker-compose.yml`.
 
 Searches are for one room; `adults` is the number of guests in that room (1–8).
 

@@ -32,13 +32,13 @@ const ConfigSchema = z.object({
   OTHER_TRAFFIC_MULTIPLIER: z.coerce.number().min(1).max(4).default(1.2),
   TRAIN_BUFFER_MIN: z.coerce.number().int().min(0).max(240).default(30),
   FLIGHT_BUFFER_MIN: z.coerce.number().int().min(0).max(480).default(120),
-  CACHE_DIR: optionalString,
   PROVIDER_DEADLINE_MS: z.coerce.number().int().min(2000).max(120_000).default(20_000),
   /** Interface the HTTP mode listens on; the Docker image sets 0.0.0.0. */
   HOST: z.string().default("127.0.0.1"),
-  /** Hostnames accepted in the Host header in HTTP mode (DNS-rebinding protection); default localhost/127.0.0.1/[::1]. */
+  /** Extra hostnames accepted in the Host header in HTTP mode, besides localhost/127.0.0.1/[::1] (DNS-rebinding protection). */
   ALLOWED_HOSTS: csv,
-  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  /** 3001 by default, so it can run next to other local MCP servers that use 3000. */
+  PORT: z.coerce.number().int().min(1).max(65535).default(3001),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

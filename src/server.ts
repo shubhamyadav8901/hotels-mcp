@@ -4,7 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express from "express";
 import { loadConfig } from "./config.js";
 import { DEFAULT_ALLOWED_HOSTS, hostCheck } from "./http-guard.js";
-import { createDeps, createServer, type Deps } from "./mcp.js";
+import { createDeps, createServer, SERVER_NAME, SERVER_VERSION, type Deps } from "./mcp.js";
 
 async function runStdio(deps: Deps): Promise<void> {
   const server = createServer(deps);
@@ -14,7 +14,8 @@ async function runStdio(deps: Deps): Promise<void> {
 /** Stateless Streamable HTTP: one server + transport per request, shared deps (caches, registry). */
 function runHttp(deps: Deps): void {
   const { HOST, PORT, ALLOWED_HOSTS } = deps.config;
-  const allowedHosts = ALLOWED_HOSTS.length ? ALLOWED_HOSTS : DEFAULT_ALLOWED_HOSTS;
+  // Loopback names are always allowed (a rebinding attack needs the attacker's hostname); ALLOWED_HOSTS adds more.
+  const allowedHosts = [...new Set([...DEFAULT_ALLOWED_HOSTS, ...ALLOWED_HOSTS])];
   const app = express();
   // DNS-rebinding protection: only accept requests addressed to an allowed hostname (any port, so a
   // remapped Docker port still works).
@@ -25,6 +26,7 @@ function runHttp(deps: Deps): void {
     const server = createServer(deps);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
+      enableJsonResponse: true,
     });
     res.on("close", () => {
       void transport.close();
@@ -50,8 +52,13 @@ function runHttp(deps: Deps): void {
   };
   app.get("/mcp", methodNotAllowed);
   app.delete("/mcp", methodNotAllowed);
-  app.get("/health", (_req, res) => {
-    res.json({ ok: true });
+  app.get("/healthz", (_req, res) => {
+    res.json({
+      status: "ok",
+      server: { name: SERVER_NAME, version: SERVER_VERSION },
+      datasets: deps.snapshots().map((d) => ({ id: d.id, rows: d.rows, built_at: d.built_at })),
+      sources: deps.registry.status().map((p) => ({ id: p.id, enabled: p.enabled })),
+    });
   });
 
   app.listen(PORT, HOST, () => {

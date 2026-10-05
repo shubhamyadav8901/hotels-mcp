@@ -8,7 +8,7 @@ Include what you found, how to reproduce it, and the impact you expect. You'll g
 
 ## Deployment note
 
-The HTTP mode (`--http`, the Docker image) has **no authentication**. Keep it on localhost or a private network; if you expose it through a tunnel, put your own access control in front of it. By default it binds `127.0.0.1` (`HOST`); the Docker image binds `0.0.0.0` inside the container, and the bundled compose file publishes it only on `127.0.0.1:3000`. DNS-rebinding protection rejects requests whose `Host` hostname isn't in `ALLOWED_HOSTS` (default: `localhost`, `127.0.0.1` and `[::1]`, on any port). `PROVIDER_DEADLINE_MS` (default 20000) caps how long each source may take per search. The stdio mode is only reachable by the client that starts it.
+The HTTP mode (`--http`, the Docker image) has **no authentication**. Keep it on localhost or a private network; if you expose it through a tunnel, put your own access control in front of it. By default it binds `127.0.0.1` (`HOST`); the Docker image binds `0.0.0.0` inside the container, and the bundled compose file publishes it only on `127.0.0.1:3001`. DNS-rebinding protection rejects requests whose `Host` hostname is neither a loopback name (`localhost`, `127.0.0.1`, `[::1]`, always accepted) nor listed in `ALLOWED_HOSTS`; the port is ignored. `PROVIDER_DEADLINE_MS` (default 20000) caps how long each source may take per search. The stdio mode is only reachable by the client that starts it.
 
 ## Scope
 

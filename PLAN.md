@@ -161,7 +161,7 @@ lat/lng that Claude got anywhere, and every hotel output includes lat/lng.
 
 `SERPAPI_KEY` (optional), `OSRM_URL`, `NOMINATIM_URL`, `PHOTON_URL`, `HTTP_USER_AGENT` (required for
 Nominatim), `PROVIDERS_DISABLED` (comma list), `METRO_TRAFFIC_MULTIPLIER`, `OTHER_TRAFFIC_MULTIPLIER`,
-`TRAIN_BUFFER_MIN`, `FLIGHT_BUFFER_MIN`, `CACHE_DIR` (optional file cache). Secrets live only in `.env`.
+`TRAIN_BUFFER_MIN`, `FLIGHT_BUFFER_MIN`. Secrets live only in `.env`.
 
 ## 10. Risks
 

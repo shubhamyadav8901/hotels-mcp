@@ -31,8 +31,8 @@
       "licence": "ODbL 1.0 — © OpenStreetMap contributors"
     },
     "xotelo_keys": {
-      "rows": 548,
-      "built_at": "2026-10-05T10:16:33.851Z",
+      "rows": 1387,
+      "built_at": "2026-10-05T11:13:47.268Z",
       "source": "Xotelo /list (data.xotelo.com); location keys parsed from TripAdvisor hotel URLs",
       "licence": "Derived from Xotelo API responses (TripAdvisor data); no redistribution licence stated"
     }

@@ -38,6 +38,6 @@ jobs:
         run: docker build -t india-hotels-mcp:ci .
       - name: Start container and check health
         run: |
-          docker run -d --name mcp -p 127.0.0.1:3000:3000 india-hotels-mcp:ci
-          for i in $(seq 1 30); do curl -sf localhost:3000/health && exit 0; sleep 1; done
+          docker run -d --name mcp -p 127.0.0.1:3001:3001 india-hotels-mcp:ci
+          for i in $(seq 1 30); do curl -sf localhost:3001/healthz && exit 0; sleep 1; done
           docker logs mcp; exit 1

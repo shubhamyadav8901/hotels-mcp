@@ -9,14 +9,13 @@ RUN npm run build && npm prune --omit=dev
 
 FROM node:22-alpine
 WORKDIR /app
-ENV NODE_ENV=production
 # Listen on all interfaces inside the container; publish the port on 127.0.0.1 only (see docker-compose.yml).
-ENV HOST=0.0.0.0
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=3001
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
 COPY data ./data
 USER node
-EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://localhost:${PORT:-3000}/health || exit 1
+EXPOSE 3001
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "dist/src/server.js", "--http"]
