@@ -24,20 +24,28 @@ const isoDateTime = z
   .describe("ISO-8601 datetime; without an offset it is taken as IST.");
 
 const RetiringOut = z.object({
-  station_code: z.string(),
-  station_name: z.string(),
-  managed_by: z.string(),
-  lat: z.number().nullable(),
-  lng: z.number().nullable(),
-  distance_km: z.number().nullable(),
+  station_code: z.string().describe("Station code."),
+  station_name: z.string().describe("Station name."),
+  managed_by: z.string().describe("Who runs the retiring rooms, as IRCTC lists it."),
+  lat: z.number().nullable().describe("Station latitude (null if unknown)."),
+  lng: z.number().nullable().describe("Station longitude (null if unknown)."),
+  distance_km: z
+    .number()
+    .nullable()
+    .describe("Straight-line distance from the search place, km; 0 for the station itself."),
 });
 
 const PointOut = z.object({
-  label: z.string(),
-  name: z.string(),
-  code: z.string().nullable(),
-  kind: z.string(),
-  at: z.string(),
+  label: z.string().describe("Label of the point: as given, else its code or name."),
+  name: z.string().describe("Resolved place name."),
+  code: z
+    .string()
+    .nullable()
+    .describe("Railway station code or airport IATA code (null when the place has none)."),
+  kind: z
+    .string()
+    .describe("Kind of place: station, airport, bus_station, landmark, locality or point (raw coordinates)."),
+  at: z.string().describe("Arrival or departure time in IST, ISO-8601 with +05:30."),
 });
 
 export interface StayToolDeps {
@@ -101,40 +109,112 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
           ),
       },
       outputSchema: {
-        stays: z.array(
-          z.object({
-            stay: z.number(),
-            arrive: PointOut,
-            depart: PointOut,
-            check_in: z.string(),
-            check_out: z.string(),
-            nights: z.number(),
-            stay_hours: z.number(),
-            searched_around: z.array(z.string()),
-            candidates: z.array(
-              z.object({
-                hotel_id: z.string(),
-                name: z.string(),
-                lat: z.number(),
-                lng: z.number(),
-                stars: z.number().nullable(),
-                rating_10: z.number().nullable(),
-                per_night_inr: z.number().nullable(),
-                seller: z.string().nullable(),
-                occupancy: z.enum(["confirmed", "likely", "unverified"]).nullable(),
-                cheaper_unverified_per_night_inr: z.number().nullable(),
-                minutes_from_arrival: z.number().nullable(),
-                minutes_to_departure: z.number().nullable(),
-                leave_by: z.string().nullable(),
-                score_inr: z.number().nullable(),
-              }),
-            ),
-            retiring_rooms: z.array(RetiringOut),
-            warnings: z.array(z.string()),
-            sources_failed: z.array(z.object({ source: z.string(), code: z.string(), message: z.string() })),
-          }),
-        ),
-        notes: z.array(z.string()),
+        stays: z
+          .array(
+            z.object({
+              stay: z.number().describe("Stay number, from 1, in trip order."),
+              arrive: PointOut.describe("Where and when the traveller arrives."),
+              depart: PointOut.describe("Where and when the traveller leaves."),
+              check_in: z
+                .string()
+                .describe("Hotel check-in date, YYYY-MM-DD; the previous day for arrivals before 06:00 IST."),
+              check_out: z.string().describe("Hotel check-out date, YYYY-MM-DD."),
+              nights: z.number().describe("Nights between check_in and check_out."),
+              stay_hours: z.number().describe("Hours from arrival to departure, 1 decimal."),
+              searched_around: z
+                .array(z.string())
+                .describe(
+                  "Labels of the points hotels were searched around: the arrival, and the departure when elsewhere.",
+                ),
+              candidates: z
+                .array(
+                  z.object({
+                    hotel_id: z
+                      .string()
+                      .describe("Hotel id as source:source_id of the first source that listed it."),
+                    name: z.string().describe("Hotel name."),
+                    lat: z.number().describe("Hotel latitude."),
+                    lng: z.number().describe("Hotel longitude."),
+                    stars: z
+                      .number()
+                      .nullable()
+                      .describe("Official hotel class, 1–5 stars (null if unknown)."),
+                    rating_10: z
+                      .number()
+                      .nullable()
+                      .describe("Guest review score on a 0–10 scale (null if unrated)."),
+                    per_night_inr: z
+                      .number()
+                      .nullable()
+                      .describe(
+                        "Cheapest per-night INR price confirmed or likely to be one room, else the cheapest price.",
+                      ),
+                    seller: z
+                      .string()
+                      .nullable()
+                      .describe(
+                        "Booking site of per_night_inr; the source id when the source names no seller.",
+                      ),
+                    occupancy: z
+                      .enum(["confirmed", "likely", "unverified"])
+                      .nullable()
+                      .describe(
+                        "How far per_night_inr is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named), unverified (source may quote two rooms for 3+ guests, or a multi-bedroom unit).",
+                      ),
+                    cheaper_unverified_per_night_inr: z
+                      .number()
+                      .nullable()
+                      .describe(
+                        "A cheaper per-night INR price that is unverified as one room, when there is one.",
+                      ),
+                    minutes_from_arrival: z
+                      .number()
+                      .nullable()
+                      .describe(
+                        "Traffic-adjusted drive from the arrival point, minutes (null when not routed).",
+                      ),
+                    minutes_to_departure: z
+                      .number()
+                      .nullable()
+                      .describe(
+                        "Traffic-adjusted drive to the departure point, minutes (null when not routed).",
+                      ),
+                    leave_by: z
+                      .string()
+                      .nullable()
+                      .describe(
+                        "Latest time to leave the hotel, IST ISO-8601: departure minus drive time and the train or flight buffer.",
+                      ),
+                    score_inr: z
+                      .number()
+                      .nullable()
+                      .describe(
+                        "per_night_inr × nights plus both drives valued at value_of_time_inr_per_hour, INR; lower is better.",
+                      ),
+                  }),
+                )
+                .describe("Hotels for this stay, lowest score_inr first, then cheapest."),
+              retiring_rooms: z
+                .array(RetiringOut)
+                .describe(
+                  "Arrival or departure stations with IRCTC retiring rooms, listed only for 3–48 h stays.",
+                ),
+              warnings: z
+                .array(z.string())
+                .describe("Late arrivals, early departures, short or same-day stays and empty results."),
+              sources_failed: z
+                .array(
+                  z.object({
+                    source: z.string().describe("Id of the source that failed."),
+                    code: z.string().describe("Error code, e.g. UPSTREAM_UNAVAILABLE or RATE_LIMITED."),
+                    message: z.string().describe("What went wrong."),
+                  }),
+                )
+                .describe("Sources that did not answer for this stay, and why."),
+            }),
+          )
+          .describe("One plan per requested stay, in trip order."),
+        notes: z.array(z.string()).describe("Buffers used, price and routing caveats, and attribution."),
       },
       annotations: readOnly("Plan hotel stays for an itinerary"),
     },
@@ -220,11 +300,11 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
           .describe("Search radius when not giving a station_code."),
       },
       outputSchema: {
-        stations: z.array(RetiringOut),
-        booking_url: z.string(),
-        rules: z.array(z.string()),
-        indicative_prices: z.string(),
-        notes: z.array(z.string()),
+        stations: z.array(RetiringOut).describe("Stations with IRCTC retiring rooms, nearest first."),
+        booking_url: z.string().describe("IRCTC retiring-room booking portal."),
+        rules: z.array(z.string()).describe("IRCTC booking rules for retiring rooms."),
+        indicative_prices: z.string().describe("Typical price ranges from secondary sources; not live."),
+        notes: z.array(z.string()).describe("Data source and search caveats."),
       },
       annotations: readOnly("Find IRCTC railway retiring rooms"),
     },

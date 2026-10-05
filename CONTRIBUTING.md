@@ -26,6 +26,7 @@ cd hotels-mcp
 npm ci
 npm test            # vitest: unit, provider (synthetic fixtures), MCP protocol tests
 npm run typecheck
+npm run docs:check  # docs/tools.md matches the tool schemas (npm run docs:tools to regenerate)
 npm run format      # Prettier (CI runs format:check)
 npm run dev         # watch mode, stdio
 ```

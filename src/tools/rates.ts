@@ -28,28 +28,64 @@ import { validateDates } from "./hotels.js";
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
 
 const QuoteOut = z.object({
-  seller: z.string(),
-  source: z.string(),
-  per_night_inr: z.number().nullable(),
-  per_night: z.number(),
-  currency: z.string(),
-  total: z.number().nullable(),
-  includes_taxes: z.boolean().nullable(),
-  available: z.boolean().nullable(),
-  refundable: z.boolean().nullable(),
-  url: z.string().nullable(),
-  room: z.string().nullable(),
-  occupancy: z.enum(["confirmed", "likely", "unverified"]),
-  occupancy_note: z.string().nullable(),
+  seller: z
+    .string()
+    .describe("Booking site the price is from; the source id when the source names no seller."),
+  source: z.string().describe("Id of the data source that returned the price, e.g. trivago."),
+  per_night_inr: z
+    .number()
+    .nullable()
+    .describe("Per-night price converted to INR (null if no exchange rate)."),
+  per_night: z.number().describe("Per-night price in the source's original currency."),
+  currency: z.string().describe("ISO currency code of per_night and total, e.g. INR or USD."),
+  total: z
+    .number()
+    .nullable()
+    .describe("Price for the whole stay in the original currency (null when the source does not give it)."),
+  includes_taxes: z
+    .boolean()
+    .nullable()
+    .describe("Whether the price includes taxes such as GST (null when the source does not say)."),
+  available: z
+    .boolean()
+    .nullable()
+    .describe("Whether the source reports the room as bookable for these dates (null when it does not say)."),
+  refundable: z
+    .boolean()
+    .nullable()
+    .describe("Whether the rate is refundable (null when the source does not say)."),
+  url: z.string().nullable().describe("Link to the offer or hotel page at the source, when given."),
+  room: z.string().nullable().describe("Room type as the source names it (null when it does not say)."),
+  occupancy: z
+    .enum(["confirmed", "likely", "unverified"])
+    .describe(
+      "How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named), unverified (source may quote two rooms for 3+ guests, or a multi-bedroom unit).",
+    ),
+  occupancy_note: z
+    .string()
+    .nullable()
+    .describe("Why the occupancy level was given, when there is more to say."),
   single_room_check: z
     .object({
-      verdict: z.enum(SINGLE_ROOM_VERDICTS),
-      two_adult_per_night_inr: z.number().nullable(),
-      ratio: z.number().nullable(),
+      verdict: z
+        .enum(SINGLE_ROOM_VERDICTS)
+        .describe(
+          "Reading of ratio: priced_as_2_adults (≤1.1×), plausible_single_room (1.1–1.85×), looks_like_2_rooms (1.85–2.15×), unusually_high (2.15–4×), implausible (≥4×), unknown (no 2-adult price, or more than 4 guests).",
+        ),
+      two_adult_per_night_inr: z
+        .number()
+        .nullable()
+        .describe(
+          "Same seller's (for trivago, same source's) per-night INR price for 2 adults at this hotel and dates (null if not found).",
+        ),
+      ratio: z
+        .number()
+        .nullable()
+        .describe("per_night_inr divided by two_adult_per_night_inr, 2 decimals (null without both prices)."),
     })
     .nullable()
     .describe("Present when check_single_room ran for this price."),
-  fetched_at: z.string(),
+  fetched_at: z.string().describe("ISO time the source returned this price."),
 });
 
 export interface RatesToolDeps {
@@ -95,24 +131,60 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           ),
       },
       outputSchema: {
-        hotel: z.object({
-          hotel_id: z.string(),
-          also_ids: z.array(z.string()),
-          name: z.string(),
-          lat: z.number(),
-          lng: z.number(),
-          stars: z.number().nullable(),
-          rating_10: z.number().nullable(),
-          review_count: z.number().nullable(),
-        }),
-        check_in: z.string(),
-        check_out: z.string(),
-        prices: z.array(QuoteOut),
-        cheapest_inr: z.number().nullable(),
-        priciest_inr: z.number().nullable(),
-        sources_ok: z.array(z.string()),
-        sources_failed: z.array(z.object({ source: z.string(), code: z.string(), message: z.string() })),
-        notes: z.array(z.string()),
+        hotel: z
+          .object({
+            hotel_id: z.string().describe("Hotel id as source:source_id of the first source that listed it."),
+            also_ids: z
+              .array(z.string())
+              .describe(
+                "Ids (source:source_id) of the same hotel at other sources; each resolves to this hotel.",
+              ),
+            name: z.string().describe("Hotel name as the first source gives it."),
+            lat: z.number().describe("Hotel latitude."),
+            lng: z.number().describe("Hotel longitude."),
+            stars: z.number().nullable().describe("Official hotel class, 1–5 stars (null if unknown)."),
+            rating_10: z
+              .number()
+              .nullable()
+              .describe(
+                "Guest review score on a 0–10 scale, from the source with the most reviews (null if unrated).",
+              ),
+            review_count: z
+              .number()
+              .nullable()
+              .describe("Number of guest reviews behind rating_10 (null if unknown)."),
+          })
+          .describe("The hotel the prices are for, as the sources list it."),
+        check_in: z.string().describe("Check-in date, YYYY-MM-DD."),
+        check_out: z.string().describe("Check-out date, YYYY-MM-DD."),
+        prices: z
+          .array(QuoteOut)
+          .describe(
+            "One entry per source and seller, cheapest per_night_inr first (unconverted prices last).",
+          ),
+        cheapest_inr: z
+          .number()
+          .nullable()
+          .describe("Lowest per_night_inr among prices (null if none in INR)."),
+        priciest_inr: z
+          .number()
+          .nullable()
+          .describe("Highest per_night_inr among prices (null if none in INR)."),
+        sources_ok: z
+          .array(z.string())
+          .describe("Ids of the sources that answered the re-search near the hotel."),
+        sources_failed: z
+          .array(
+            z.object({
+              source: z.string().describe("Id of the source that failed."),
+              code: z.string().describe("Error code, e.g. UPSTREAM_UNAVAILABLE or RATE_LIMITED."),
+              message: z.string().describe("What went wrong."),
+            }),
+          )
+          .describe(
+            "Sources or lookups that did not answer, and why; single_room_check:<source> marks a failed 2-adult lookup.",
+          ),
+        notes: z.array(z.string()).describe("Caveats about the prices and the single-room check."),
       },
       annotations: readOnly("Compare a hotel's prices across sites"),
     },

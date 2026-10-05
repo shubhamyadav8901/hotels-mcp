@@ -27,11 +27,25 @@ export const PointInput = z
   .describe("A place: exactly one of lat+lng, station_code, iata or place.");
 
 export const AnchorOut = z.object({
-  kind: z.string(),
-  name: z.string(),
-  code: z.string().nullable(),
-  context: z.string().nullable(),
-  lat: z.number(),
-  lng: z.number(),
-  source: z.string(),
+  kind: z
+    .string()
+    .describe("Kind of place: station, airport, bus_station, landmark, locality or point (raw coordinates)."),
+  name: z.string().describe("Place name."),
+  code: z
+    .string()
+    .nullable()
+    .describe("Railway station code or airport IATA code (null when the place has none)."),
+  context: z
+    .string()
+    .nullable()
+    .describe(
+      "Extra detail, e.g. the airport's city, the bus operator, a halt marker or the geocoder's locality.",
+    ),
+  lat: z.number().describe("Latitude."),
+  lng: z.number().describe("Longitude."),
+  source: z
+    .string()
+    .describe(
+      "Dataset or geocoder the place came from, e.g. openstreetmap, ourairports, or input for given coordinates.",
+    ),
 });

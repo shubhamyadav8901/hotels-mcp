@@ -17,6 +17,9 @@ datetimes.
 
 ## Tools
 
+Full input and output schemas for every tool: [docs/tools.md](docs/tools.md) (generated from the server's
+`tools/list`; `npm run docs:tools` regenerates it and CI fails if it is out of date).
+
 | Tool                  | What it does                                                                                                                                                                                                            |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `resolve_place`       | Name or code → coordinates (stations, airports, bus stations, landmarks, localities); or coordinates → nearest stations, airports and bus stations                                                                      |

@@ -9,14 +9,30 @@ import { handle, readOnly } from "./common.js";
 import { PointInput } from "./points.js";
 
 const LegOut = z.object({
-  from: z.string(),
-  to: z.string(),
-  straight_km: z.number(),
-  road_km: z.number().nullable(),
-  minutes_raw: z.number().nullable(),
-  minutes: z.number().nullable(),
-  traffic_multiplier: z.number(),
-  warning: z.string().nullable(),
+  from: z.string().describe("Label of the origin."),
+  to: z.string().describe("Label of the destination."),
+  straight_km: z.number().describe("Straight-line distance, km."),
+  road_km: z
+    .number()
+    .nullable()
+    .describe("Road distance along the route, km (null when no route was found)."),
+  minutes_raw: z
+    .number()
+    .nullable()
+    .describe("Free-flow travel time from the router, minutes (null when no route)."),
+  minutes: z
+    .number()
+    .nullable()
+    .describe(
+      "Travel time after the traffic multiplier, minutes; equals minutes_raw for walking (null when no route).",
+    ),
+  traffic_multiplier: z
+    .number()
+    .describe("Factor applied to free-flow drive time for traffic, higher in metro areas; 1 for walking."),
+  warning: z
+    .string()
+    .nullable()
+    .describe("Set when no route was found or a point is over 500 m from the nearest road."),
 });
 
 const modeField = z
@@ -45,7 +61,10 @@ export function registerTravelTools(
         destinations: z.array(PointInput).min(1).max(25).describe("Destination places."),
         mode: modeField,
       },
-      outputSchema: { legs: z.array(LegOut), notes: z.array(z.string()) },
+      outputSchema: {
+        legs: z.array(LegOut).describe("One leg per origin–destination pair, origin by origin."),
+        notes: z.array(z.string()).describe("How times are computed, and attribution."),
+      },
       annotations: readOnly("Travel times between places"),
     },
     handle(async (a) => {
@@ -86,34 +105,53 @@ export function registerTravelTools(
         mode: modeField,
       },
       outputSchema: {
-        hotels: z.array(
-          z.object({
-            rank: z.number(),
-            hotel_id: z.string().nullable(),
-            name: z.string(),
-            lat: z.number(),
-            lng: z.number(),
-            cheapest: z
-              .object({
-                per_night_inr: z.number().nullable(),
-                seller: z.string(),
-                source: z.string(),
-                occupancy: z.enum(["confirmed", "likely", "unverified"]),
-                fetched_at: z.string(),
-                check_in: z.string(),
-                check_out: z.string(),
-                adults: z.number(),
-                children_ages: z.array(z.number()),
-              })
-              .nullable()
-              .describe(
-                "Cheapest price from the search that returned this hotel, for that search's dates and party.",
-              ),
-            total_minutes: z.number().nullable(),
-            legs: z.array(LegOut),
-          }),
-        ),
-        notes: z.array(z.string()),
+        hotels: z
+          .array(
+            z.object({
+              rank: z.number().describe("Position by total_minutes, then per_night_inr; 1 is best."),
+              hotel_id: z
+                .string()
+                .nullable()
+                .describe("hotel_id as given (null when the hotel was given by lat/lng)."),
+              name: z.string().describe("Hotel name (the coordinates when no name was given)."),
+              lat: z.number().describe("Hotel latitude."),
+              lng: z.number().describe("Hotel longitude."),
+              cheapest: z
+                .object({
+                  per_night_inr: z
+                    .number()
+                    .nullable()
+                    .describe("Per-night price converted to INR (null if no exchange rate)."),
+                  seller: z
+                    .string()
+                    .describe(
+                      "Booking site the price is from; the source id when the source names no seller.",
+                    ),
+                  source: z.string().describe("Id of the data source that returned the price."),
+                  occupancy: z
+                    .enum(["confirmed", "likely", "unverified"])
+                    .describe(
+                      "How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named), unverified (source may quote two rooms for 3+ guests, or a multi-bedroom unit).",
+                    ),
+                  fetched_at: z.string().describe("ISO time the source returned this price."),
+                  check_in: z.string().describe("Check-in date of that search, YYYY-MM-DD."),
+                  check_out: z.string().describe("Check-out date of that search, YYYY-MM-DD."),
+                  adults: z.number().describe("Adults in that search."),
+                  children_ages: z.array(z.number()).describe("Ages of children in that search."),
+                })
+                .nullable()
+                .describe(
+                  "Cheapest price from the search that returned this hotel, for that search's dates and party.",
+                ),
+              total_minutes: z
+                .number()
+                .nullable()
+                .describe("Sum of minutes over all legs (null when any leg has no route)."),
+              legs: z.array(LegOut).describe("Travel from this hotel to each place, in the order given."),
+            }),
+          )
+          .describe("Hotels sorted by rank."),
+        notes: z.array(z.string()).describe("How times are computed, caveats and attribution."),
       },
       annotations: readOnly("Compare hotels by travel time"),
     },

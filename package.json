@@ -40,6 +40,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p . --noEmit",
     "smoke": "tsx scripts/smoke.ts",
+    "docs:tools": "tsx scripts/gen-tool-docs.ts",
+    "docs:check": "tsx scripts/gen-tool-docs.ts --check",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

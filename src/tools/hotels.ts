@@ -17,65 +17,122 @@ const KM_PER_DRIVE_MINUTE = 1.5;
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
 
 const PriceOut = z.object({
-  per_night_inr: z.number().nullable(),
-  per_night: z.number(),
-  currency: z.string(),
-  seller: z.string().nullable(),
-  source: z.string(),
-  includes_taxes: z.boolean().nullable(),
-  available: z.boolean().nullable(),
-  refundable: z.boolean().nullable(),
-  url: z.string().nullable(),
-  room: z.string().nullable(),
-  occupancy: z.enum(["confirmed", "likely", "unverified"]),
-  occupancy_note: z.string().nullable(),
-  fetched_at: z.string(),
+  per_night_inr: z
+    .number()
+    .nullable()
+    .describe("Per-night price converted to INR (null if no exchange rate)."),
+  per_night: z.number().describe("Per-night price in the source's original currency."),
+  currency: z.string().describe("ISO currency code of per_night, e.g. INR or USD."),
+  seller: z
+    .string()
+    .nullable()
+    .describe("Booking site the price is from, e.g. Booking.com (null when the source does not name one)."),
+  source: z.string().describe("Id of the data source that returned the price, e.g. trivago."),
+  includes_taxes: z
+    .boolean()
+    .nullable()
+    .describe("Whether the price includes taxes such as GST (null when the source does not say)."),
+  available: z
+    .boolean()
+    .nullable()
+    .describe("Whether the source reports the room as bookable for these dates (null when it does not say)."),
+  refundable: z
+    .boolean()
+    .nullable()
+    .describe("Whether the rate is refundable (null when the source does not say)."),
+  url: z.string().nullable().describe("Link to the offer or hotel page at the source, when given."),
+  room: z.string().nullable().describe("Room type as the source names it (null when it does not say)."),
+  occupancy: z
+    .enum(["confirmed", "likely", "unverified"])
+    .describe(
+      "How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named), unverified (source may quote two rooms for 3+ guests, or a multi-bedroom unit).",
+    ),
+  occupancy_note: z
+    .string()
+    .nullable()
+    .describe("Why the occupancy level was given, when there is more to say."),
+  fetched_at: z.string().describe("ISO time the source returned this price."),
 });
 
 const HotelOut = z.object({
-  hotel_id: z.string(),
-  also_ids: z.array(z.string()),
-  name: z.string(),
-  lat: z.number(),
-  lng: z.number(),
-  distance_km: z.number(),
-  stars: z.number().nullable(),
-  rating_10: z.number().nullable(),
-  review_count: z.number().nullable(),
-  cheapest: PriceOut.nullable(),
-  cheapest_single_room: PriceOut.nullable(),
-  price_count: z.number(),
-  sources: z.array(z.string()),
+  hotel_id: z.string().describe("Hotel id as source:source_id of the first source that listed it."),
+  also_ids: z
+    .array(z.string())
+    .describe("Ids (source:source_id) of the same hotel at other sources; each resolves to this hotel."),
+  name: z.string().describe("Hotel name as the first source gives it."),
+  lat: z.number().describe("Hotel latitude."),
+  lng: z.number().describe("Hotel longitude."),
+  distance_km: z.number().describe("Straight-line distance from the search place, km."),
+  stars: z.number().nullable().describe("Official hotel class, 1–5 stars (null if unknown)."),
+  rating_10: z
+    .number()
+    .nullable()
+    .describe("Guest review score on a 0–10 scale, from the source with the most reviews (null if unrated)."),
+  review_count: z.number().nullable().describe("Number of guest reviews behind rating_10 (null if unknown)."),
+  cheapest: PriceOut.nullable().describe(
+    "Lowest available per-night price in INR across all sources (null when no source priced the hotel).",
+  ),
+  cheapest_single_room: PriceOut.nullable().describe(
+    "Lowest price confirmed or likely to be one room for the party, given only when cheapest is unverified and differs.",
+  ),
+  price_count: z.number().describe("Number of prices found across all sources and sellers."),
+  sources: z.array(z.string()).describe("Ids of the sources that list this hotel."),
 });
 
 const outputSchema = {
-  anchor: AnchorOut,
-  query: z.object({
-    radius_km: z.number(),
-    check_in: z.string(),
-    check_out: z.string(),
-    adults: z.number(),
-    children_ages: z.array(z.number()),
-  }),
-  showing: z.string(),
-  total: z.number(),
-  hotels: z.array(HotelOut.extend({ drive_minutes: z.number().nullable() })),
-  sources_ok: z.array(z.string()),
-  sources_failed: z.array(z.object({ source: z.string(), code: z.string(), message: z.string() })),
+  anchor: AnchorOut.describe("The resolved search place."),
+  query: z
+    .object({
+      radius_km: z.number().describe("Radius searched, km; widened when max_drive_minutes needs it."),
+      check_in: z.string().describe("Check-in date, YYYY-MM-DD."),
+      check_out: z.string().describe("Check-out date, YYYY-MM-DD."),
+      adults: z.number().describe("Adults in the one room searched for."),
+      children_ages: z.array(z.number()).describe("Ages of children sharing that room."),
+    })
+    .describe("The search as run."),
+  showing: z.string().describe("Which slice of the results this page holds, e.g. 'Showing 1–10 of 42'."),
+  total: z.number().describe("Number of hotels matching all filters, across all pages."),
+  hotels: z
+    .array(
+      HotelOut.extend({
+        drive_minutes: z
+          .number()
+          .nullable()
+          .describe(
+            "Traffic-adjusted drive time from the search place, minutes (null without max_drive_minutes).",
+          ),
+      }),
+    )
+    .describe("This page of hotels, in the requested sort order."),
+  sources_ok: z.array(z.string()).describe("Ids of the sources that answered."),
+  sources_failed: z
+    .array(
+      z.object({
+        source: z.string().describe("Id of the source that failed."),
+        code: z.string().describe("Error code, e.g. UPSTREAM_UNAVAILABLE or RATE_LIMITED."),
+        message: z.string().describe("What went wrong."),
+      }),
+    )
+    .describe("Sources that did not answer, and why."),
   coverage: z
     .array(
       z.object({
-        source: z.string(),
-        hotels: z.number(),
-        priced: z.number(),
-        max_km: z.number().nullable(),
-        note: z.string().nullable(),
+        source: z.string().describe("Id of the source."),
+        hotels: z.number().describe("Hotels the source returned within the radius."),
+        priced: z.number().describe("How many of those hotels the source priced."),
+        max_km: z
+          .number()
+          .nullable()
+          .describe(
+            "Distance of the source's furthest hotel from the search place, km (null if it returned none).",
+          ),
+        note: z.string().nullable().describe("What limited the source's results, e.g. pages fetched."),
       }),
     )
     .describe(
       "What each source returned within the radius and what limited it; sources return limited pages.",
     ),
-  notes: z.array(z.string()),
+  notes: z.array(z.string()).describe("Caveats about the results, sources and attribution."),
 };
 
 const priceOut = (p: PriceQuote): z.infer<typeof PriceOut> => ({

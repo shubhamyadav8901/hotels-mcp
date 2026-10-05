@@ -12,7 +12,9 @@ const BUS_WORDS = /\b(bus|isbt|depot|stand)\b/i;
 const asksForRailwayStation = (q: string) =>
   RAIL_WORDS.test(q) || (STATION_WORD.test(q) && !BUS_WORDS.test(q));
 
-const NearOut = AnchorOut.extend({ distance_km: z.number() });
+const NearOut = AnchorOut.extend({
+  distance_km: z.number().describe("Straight-line distance from the given lat/lng, km."),
+});
 
 export function registerPlaceTools(server: McpServer, deps: { gazetteer: Gazetteer }): void {
   server.registerTool(
@@ -41,11 +43,18 @@ export function registerPlaceTools(server: McpServer, deps: { gazetteer: Gazette
         limit: z.number().int().min(1).max(10).default(5).describe("Maximum matches for a query."),
       },
       outputSchema: {
-        matches: z.array(AnchorOut),
+        matches: z
+          .array(AnchorOut)
+          .describe("Places matching query, best first (empty when lat/lng was given)."),
         nearby: z
-          .object({ stations: z.array(NearOut), airports: z.array(NearOut), bus_stations: z.array(NearOut) })
-          .nullable(),
-        notes: z.array(z.string()),
+          .object({
+            stations: z.array(NearOut).describe("Up to 3 nearest railway stations within 10 km."),
+            airports: z.array(NearOut).describe("Up to 2 nearest airports with IATA codes within 60 km."),
+            bus_stations: z.array(NearOut).describe("Up to 2 nearest bus stations within 5 km."),
+          })
+          .nullable()
+          .describe("Transport points near the given lat/lng, nearest first (null when query was given)."),
+        notes: z.array(z.string()).describe("Caveats, unavailable geocoders and attribution."),
       },
       annotations: readOnly("Resolve a place in India"),
     },

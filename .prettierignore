@@ -6,3 +6,4 @@ test/fixtures
 package-lock.json
 REQUIREMENTS.md
 osrm-data
+docs/tools.md
