@@ -32,6 +32,8 @@ export interface RankedHotel extends MergedHotel {
   cheapest: PriceQuote | null;
   /** Cheapest price confirmed or likely to be one room for the party; differs from `cheapest` when that is unverified. */
   cheapest_single_room: PriceQuote | null;
+  /** Cheapest price left out as two rooms, while the hotel is listed for its other prices. */
+  two_rooms_left_out: PriceQuote | null;
 }
 
 export interface HotelSearchResult {
@@ -120,11 +122,13 @@ export async function searchHotels(
   // at the end, so the count is what include_two_room_prices would add.
   const twoRoomsOnly = new Set<string>();
   const merged = mergeCandidates(converted).map((h) => {
-    if (opts.include_two_room_prices || !h.prices.some((p) => p.occupancy === "two_rooms")) return h;
+    if (opts.include_two_room_prices || !h.prices.some((p) => p.occupancy === "two_rooms"))
+      return { ...h, two_rooms_left_out: null };
     const prices = h.prices.filter((p) => p.occupancy !== "two_rooms");
-    if (prices.length > 0) return { ...h, prices };
+    const leftOut = cheapest(h.prices.filter((p) => p.occupancy === "two_rooms"));
+    if (prices.length > 0) return { ...h, prices, two_rooms_left_out: leftOut };
     twoRoomsOnly.add(h.hotel_id);
-    return h;
+    return { ...h, two_rooms_left_out: null };
   });
   let hotels: RankedHotel[] = merged
     .map((h) => ({

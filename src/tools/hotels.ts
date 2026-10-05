@@ -4,7 +4,7 @@ import { AppError, toAppError } from "../core/errors.js";
 import { searchPlaceName, type Anchor, type Gazetteer } from "../core/anchors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
 import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/hotel-search.js";
-import { OCCUPANCY_LEVELS, OCCUPANCY_LEVELS_TEXT } from "../core/occupancy.js";
+import { effectivePrice, OCCUPANCY_LEVELS, OCCUPANCY_LEVELS_TEXT } from "../core/occupancy.js";
 import { travelMatrix, type TravelDeps } from "../core/travel.js";
 import type { PriceQuote } from "../core/types.js";
 import { handle, readOnly } from "./common.js";
@@ -73,6 +73,9 @@ const HotelOut = z.object({
   ),
   cheapest_single_room: PriceOut.nullable().describe(
     "Lowest price confirmed or likely to be one room for the party, given only when cheapest is unverified and differs.",
+  ),
+  two_rooms_left_out: PriceOut.nullable().describe(
+    "Cheapest price left out because it was for two rooms (about double the same source's 2-adult price, see its occupancy_note), when it is cheaper than the price the hotel is ranked by (cheapest_single_room, else cheapest); null otherwise or with include_two_room_prices.",
   ),
   price_count: z.number().describe("Number of prices found across all sources and sellers."),
   sources: z.array(z.string()).describe("Ids of the sources that list this hotel."),
@@ -164,6 +167,12 @@ const hotelOut = (h: RankedHotel): z.infer<typeof HotelOut> => ({
   // Only when it differs: the cheapest price is unverified as one room for the party.
   cheapest_single_room:
     h.cheapest_single_room && h.cheapest_single_room !== h.cheapest ? priceOut(h.cheapest_single_room) : null,
+  // Only when it would have looked like a better deal than what is shown.
+  two_rooms_left_out:
+    h.two_rooms_left_out &&
+    (h.two_rooms_left_out.per_night_inr ?? Infinity) < (effectivePrice(h)?.per_night_inr ?? Infinity)
+      ? priceOut(h.two_rooms_left_out)
+      : null,
   price_count: h.prices.length,
   sources: h.sources,
 });

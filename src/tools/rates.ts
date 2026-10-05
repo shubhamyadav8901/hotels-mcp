@@ -274,6 +274,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           distance_km: 0,
           cheapest: cheapest(h.prices),
           cheapest_single_room: cheapestSingleRoom(h.prices),
+          two_rooms_left_out: null,
         };
         fromSearch = true;
       }

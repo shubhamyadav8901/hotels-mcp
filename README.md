@@ -166,7 +166,8 @@ adults and compares each hotel's price with that 2-adult price (same source, or 
 under 1.1× stays `unverified` (a two-person room, or a whole unit priced the same for any party), 1.1–1.85× is `likely` (an extra-guest charge or a
 bigger room), and 1.85× or more is `two_rooms`. Prices with no 2-adult price to compare stay `unverified`.
 Hotels priced only as two rooms are left out (the notes say how many); `include_two_room_prices: true` lists
-them, labelled. When a hotel's cheapest price is not one room, `cheapest_single_room` gives its cheapest
+them, labelled. A hotel listed for its other prices shows a cheaper two-room price it left out in
+`two_rooms_left_out`, so the gap can be explained. When a hotel's cheapest price is not one room, `cheapest_single_room` gives its cheapest
 confirmed-or-likely price; sorting by price, `max_price_inr` and `plan_stays` scoring use that. For hotels the
 search could not check, `get_hotel_rates` with `check_single_room: true` re-prices the unverified sources for 2
 adults and gives each price a verdict: `priced_as_2_adults` (≤1.1×), `plausible_single_room` (1.1–1.85×),

@@ -199,6 +199,20 @@ Finds hotels around a place in India for given dates, with live prices from seve
 | `hotels[].cheapest_single_room.occupancy` | `"confirmed"` \| `"likely"` \| `"unverified"` \| `"two_rooms"` | How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named; for trivago and Xotelo, under 1.85x their 2-adult price), unverified (the source may quote two rooms for 3+ guests and there is no 2-adult price to compare, or a multi-bedroom unit), two_rooms (about double or more the same source's 2-adult price). |
 | `hotels[].cheapest_single_room.occupancy_note` | string \| null | Why the occupancy level was given, when there is more to say. |
 | `hotels[].cheapest_single_room.fetched_at` | string | ISO time the source returned this price. |
+| `hotels[].two_rooms_left_out` | object \| null | Cheapest price left out because it was for two rooms (about double the same source's 2-adult price, see its occupancy_note), when it is cheaper than the price the hotel is ranked by (cheapest_single_room, else cheapest); null otherwise or with include_two_room_prices. |
+| `hotels[].two_rooms_left_out.per_night_inr` | number \| null | Per-night price converted to INR (null if no exchange rate). |
+| `hotels[].two_rooms_left_out.per_night` | number | Per-night price in the source's original currency. |
+| `hotels[].two_rooms_left_out.currency` | string | ISO currency code of per_night, e.g. INR or USD. |
+| `hotels[].two_rooms_left_out.seller` | string \| null | Booking site the price is from, e.g. Booking.com (null when the source does not name one). |
+| `hotels[].two_rooms_left_out.source` | string | Id of the data source that returned the price, e.g. trivago. |
+| `hotels[].two_rooms_left_out.includes_taxes` | boolean \| null | Whether the price includes taxes such as GST (null when the source does not say). |
+| `hotels[].two_rooms_left_out.available` | boolean \| null | Whether the source reports the room as bookable for these dates (null when it does not say). |
+| `hotels[].two_rooms_left_out.refundable` | boolean \| null | Whether the rate is refundable (null when the source does not say). |
+| `hotels[].two_rooms_left_out.url` | string \| null | Link to the offer or hotel page at the source, when given. |
+| `hotels[].two_rooms_left_out.room` | string \| null | Room type as the source names it (null when it does not say). |
+| `hotels[].two_rooms_left_out.occupancy` | `"confirmed"` \| `"likely"` \| `"unverified"` \| `"two_rooms"` | How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named; for trivago and Xotelo, under 1.85x their 2-adult price), unverified (the source may quote two rooms for 3+ guests and there is no 2-adult price to compare, or a multi-bedroom unit), two_rooms (about double or more the same source's 2-adult price). |
+| `hotels[].two_rooms_left_out.occupancy_note` | string \| null | Why the occupancy level was given, when there is more to say. |
+| `hotels[].two_rooms_left_out.fetched_at` | string | ISO time the source returned this price. |
 | `hotels[].price_count` | number | Number of prices found across all sources and sellers. |
 | `hotels[].sources` | string[] | Ids of the sources that list this hotel. |
 | `hotels[].drive_minutes` | number \| null | Traffic-adjusted drive time from the search place, minutes (null without max_drive_minutes). |

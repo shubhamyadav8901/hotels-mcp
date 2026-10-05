@@ -100,8 +100,54 @@ describe("search_hotels with two-room prices", () => {
     expect(sc.notes.join("\n")).toMatch(/1 hotels were left out because every price found was for two rooms/);
   });
 
+  it("shows a cheaper two-room price it left out next to the price it kept", async () => {
+    const both = {
+      info: TRIVAGO_INFO,
+      search: async () => [
+        {
+          ...hotel("mixed", 0.5, 2189, 1095),
+          prices: [quote(2189, 1095), { ...quote(2833, null, "serpapi"), seller: "Google Hotels" }],
+        },
+      ],
+    };
+    const registry = new ProviderRegistry();
+    registry.register(both.info);
+    const c = await connect(testDeps({ registry, hotelProviders: [both], now: () => new Date(T) }));
+    const r = await c.callTool({ name: "search_hotels", arguments: args });
+    const h = (
+      r.structuredContent as {
+        hotels: Record<string, { per_night_inr: number; occupancy: string; occupancy_note: string }>[];
+      }
+    ).hotels[0]!;
+    expect(h.cheapest!.per_night_inr).toBe(2833);
+    expect(h.two_rooms_left_out).toMatchObject({ per_night_inr: 2189, occupancy: "two_rooms" });
+    expect(h.two_rooms_left_out!.occupancy_note).toMatch(/^2x trivago's 2-adult price/);
+  });
+
+  it("leaves two_rooms_left_out null when the dropped price is not cheaper than the one shown", async () => {
+    const dearer = {
+      info: TRIVAGO_INFO,
+      search: async () => [
+        {
+          ...hotel("mixed", 0.5, 4000, 2000),
+          prices: [quote(4000, 2000), { ...quote(2833, null, "serpapi"), seller: "Google Hotels" }],
+        },
+      ],
+    };
+    const registry = new ProviderRegistry();
+    registry.register(dearer.info);
+    const c = await connect(testDeps({ registry, hotelProviders: [dearer], now: () => new Date(T) }));
+    const r = await c.callTool({ name: "search_hotels", arguments: args });
+    expect(
+      (r.structuredContent as { hotels: { two_rooms_left_out: unknown }[] }).hotels[0]!.two_rooms_left_out,
+    ).toBeNull();
+  });
+
   it("lists it, labelled, with include_two_room_prices", async () => {
     const sc = await run({ include_two_room_prices: true, min_rating_pct: 60 });
+    expect(
+      (sc.hotels as unknown as { two_rooms_left_out: unknown }[]).every((h) => h.two_rooms_left_out === null),
+    ).toBe(true);
     expect(sc.hotels.map((h) => [h.name, h.cheapest.occupancy])).toEqual([
       ["Hotel doubled", "two_rooms"],
       ["Hotel single", "likely"],
