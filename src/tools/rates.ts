@@ -327,6 +327,31 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       // missed the hotel this time); keep them so name lookups and direct rate calls can still run.
       const knownIds = [target.hotel_id, ...target.also_ids].filter((id) => id && id !== match!.hotel_id);
       const withIds: RankedHotel = { ...match, also_ids: [...new Set([...match.also_ids, ...knownIds])] };
+      // Answer for the hotel that was asked about. The live re-check can return another source's listing of the
+      // same place (e.g. "Treebo Trip Royal Inn" for trivago's "ROYAL INN"), with its own name, id and often a
+      // thinner rating; keep the asked-for identity and the rating backed by more reviews.
+      const rated = [known, match]
+        .filter((h): h is NonNullable<typeof h> => !!h && h.rating_10 !== null)
+        .sort((x, y) => (y.review_count ?? 0) - (x.review_count ?? 0))[0];
+      const identityHotel = {
+        ...match,
+        hotel_id: known?.hotel_id ?? match.hotel_id,
+        also_ids: [...new Set([...withIds.also_ids, match.hotel_id])].filter(
+          (id) => id !== (known?.hotel_id ?? match.hotel_id),
+        ),
+        name: known?.name ?? match.name,
+        lat: known?.lat ?? match.lat,
+        lng: known?.lng ?? match.lng,
+        stars: known?.stars ?? match.stars,
+        rating_10: rated?.rating_10 ?? null,
+        review_count: rated?.review_count ?? null,
+      };
+      const relisted =
+        known && !fromSearch && match.hotel_id !== known.hotel_id && match.name !== known.name
+          ? [
+              `The live re-check lists this hotel as "${match.name}" (${match.hotel_id}), matched by name and location.`,
+            ]
+          : [];
       const prices: PriceQuote[] = [...match.prices];
       const sources_failed = [...r.sources_failed];
       const lookupNotes: string[] = [];
@@ -376,6 +401,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
                 : "No source listed this hotel on the live re-check, so these are the prices from the search that returned it (see fetched_at).",
             ]
           : []),
+        ...relisted,
         ...lookupNotes,
         occupancyNote(a.adults, a.children_ages),
         "Meta-search prices can differ at checkout; includes_taxes=null means the source does not say whether GST is included.",
@@ -576,7 +602,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
 
       // Re-remembering the search's own prices would only extend how long stale prices are served.
       if (!fromSearch) {
-        rq.memory.remember([match], {
+        rq.memory.remember([identityHotel], {
           check_in: a.check_in,
           check_out: a.check_out,
           adults: a.adults,
@@ -586,14 +612,14 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       if (sorted.length === 0) notes.push("No source has a live price for this hotel on these dates.");
       return {
         hotel: {
-          hotel_id: match.hotel_id,
-          also_ids: match.also_ids,
-          name: match.name,
-          lat: match.lat,
-          lng: match.lng,
-          stars: match.stars,
-          rating_10: match.rating_10,
-          review_count: match.review_count,
+          hotel_id: identityHotel.hotel_id,
+          also_ids: identityHotel.also_ids,
+          name: identityHotel.name,
+          lat: identityHotel.lat,
+          lng: identityHotel.lng,
+          stars: identityHotel.stars,
+          rating_10: identityHotel.rating_10,
+          review_count: identityHotel.review_count,
         },
         check_in: a.check_in,
         check_out: a.check_out,

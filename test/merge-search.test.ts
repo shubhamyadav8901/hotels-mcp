@@ -105,12 +105,76 @@ describe("hotel matching", () => {
     expect(m?.prices).toHaveLength(2);
   });
 
-  it("never merges two listings from the same source", () => {
+  it("merges a source's own duplicate listing only on the same spot with the same name", () => {
+    // Live, Kochi: HotelsCasa listed Sidra Pristine twice, 20 m apart, "and" vs "&".
+    const merged = mergeCandidates([
+      hotel("hotelscasa", "a", "Sidra Pristine Hotel and Portico Halls", 9.9934, 76.2874, [
+        price("hotelscasa", 40),
+      ]),
+      hotel("hotelscasa", "b", "Sidra Pristine Hotel & Portico Halls", 9.9934, 76.2872, [
+        price("hotelscasa", 45),
+      ]),
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({ sources: ["hotelscasa"], also_ids: ["hotelscasa:b"] });
+    expect(merged[0]!.prices).toHaveLength(2);
+
+    // Different names on one spot, or the same name 100 m apart, stay separate.
+    expect(
+      mergeCandidates([
+        hotel("trivago", "a", "Sunrise Residency", 28.6435, 77.2175),
+        hotel("trivago", "b", "Sunrise Palace", 28.6435, 77.2175),
+      ]),
+    ).toHaveLength(2);
+    expect(
+      mergeCandidates([
+        hotel("trivago", "a", "Sunrise Residency", 28.6435, 77.2175),
+        hotel("trivago", "b", "Sunrise Residency", 28.6444, 77.2175),
+      ]),
+    ).toHaveLength(2);
+  });
+
+  it("joins a listing to the nearer of two same-named hotels", () => {
     const merged = mergeCandidates([
       hotel("trivago", "a", "Sunrise Residency", 28.6435, 77.2175),
-      hotel("trivago", "b", "Sunrise Residency", 28.6435, 77.2175),
+      hotel("trivago", "b", "Sunrise Residency", 28.6444, 77.2175),
+      hotel("serpapi", "g", "Sunrise Residency", 28.6443, 77.2175),
     ]);
-    expect(merged).toHaveLength(2);
+    expect(merged.map((m) => [m.hotel_id, m.also_ids])).toEqual([
+      ["trivago:a", []],
+      ["trivago:b", ["serpapi:g"]],
+    ]);
+  });
+
+  it("matches an identical multi-word name a few hundred metres apart across sources, not a similar one", () => {
+    // Live, Kochi: Google and trivago placed these 200–280 m apart.
+    const royal = { name: "Royal Casa Cochin", lat: 9.968499, lng: 76.28924 };
+    expect(isSameHotel(royal, { name: "ROYAL CASA COCHIN", lat: 9.9708557, lng: 76.2884019 })).toBe(true);
+    const anupam = { name: "Anupam Residency", lat: 9.9711885, lng: 76.2869971 };
+    expect(isSameHotel(anupam, { name: "Anupam Residency", lat: 9.97268, lng: 76.28601 })).toBe(true);
+    // Similar but not identical, or a one-word name, needs the usual 150 m.
+    expect(isSameHotel(royal, { name: "Royal Casa Residency", lat: 9.9708557, lng: 76.2884019 })).toBe(false);
+    expect(
+      isSameHotel(
+        { name: "Hotel Krishna", lat: 9.9685, lng: 76.2892 },
+        { name: "Krishna", lat: 9.9709, lng: 76.2884 },
+      ),
+    ).toBe(false);
+    // A number or brand word the comparison ignores keeps the usual 150 m: numbered branches, franchises.
+    expect(
+      isSameHotel(
+        { name: "Hotel Sai Palace 1", lat: 9.9685, lng: 76.2892 },
+        { name: "Hotel Sai Palace 2", lat: 9.9709, lng: 76.2884 },
+      ),
+    ).toBe(false);
+    expect(
+      isSameHotel(
+        { name: "OYO 1234 Sunrise Residency", lat: 9.9685, lng: 76.2892 },
+        { name: "Sunrise Residency", lat: 9.9709, lng: 76.2884 },
+      ),
+    ).toBe(false);
+    // Beyond 500 m, no match.
+    expect(isSameHotel(royal, { name: "Royal Casa Cochin", lat: 9.975, lng: 76.2892 })).toBe(false);
   });
 });
 

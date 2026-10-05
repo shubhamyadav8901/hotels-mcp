@@ -54,20 +54,71 @@ export function nameSimilarity(a: string, b: string): number {
 
 const NEAR_KM = 0.15;
 const SAME_SPOT_KM = 0.04;
+/**
+ * Sources place the same hotel up to a few hundred metres apart (Google vs trivago: 200–280 m for "Anupam
+ * Residency" and "Royal Casa Cochin" in Kochi), so an identical name of two or more distinctive words matches
+ * further out than a merely similar one.
+ */
+const SAME_NAME_KM = 0.5;
 
 /** True when two listings are very likely the same property. */
 export function isSameHotel(a: { name: string; lat: number; lng: number }, b: typeof a): boolean {
   const km = haversineKm(a, b);
-  if (km > NEAR_KM) return false;
+  if (km > SAME_NAME_KM) return false;
   const sim = nameSimilarity(a.name, b.name);
+  if (km > NEAR_KM) return sim === 1 && sameDistinctiveName(a.name, b.name);
   return sim >= 0.8 || (km <= SAME_SPOT_KM && sim >= 0.5);
+}
+
+// Brand words that nameTokens drops: names that differ only by them (or by a number) can be different
+// franchises or numbered branches ("OYO 1234 Sunrise Residency", "Hotel Sai Palace 2").
+const BRANDS = new Set([
+  "oyo",
+  "fabhotel",
+  "fabhotels",
+  "treebo",
+  "townhouse",
+  "collection",
+  "flagship",
+  "capital",
+]);
+
+/**
+ * Both names reduce to the same two or more distinctive words ("Royal Casa Cochin" = "ROYAL CASA COCHIN"), and
+ * neither carries a number or brand word that the comparison would ignore.
+ */
+function sameDistinctiveName(a: string, b: string): boolean {
+  const hidden = (n: string) =>
+    /\d/.test(n) ||
+    n
+      .toLowerCase()
+      .split(/[^a-z]+/)
+      .some((t) => BRANDS.has(t));
+  if (hidden(a) || hidden(b)) return false;
+  const ta = nameTokens(a);
+  const tb = nameTokens(b);
+  return ta.size >= 2 && ta.size === tb.size && [...ta].every((t) => tb.has(t));
 }
 
 export function mergeCandidates(candidates: HotelCandidate[]): MergedHotel[] {
   const merged: MergedHotel[] = [];
   for (const c of candidates) {
     const id = `${c.source}:${c.source_id}`;
-    const match = merged.find((m) => !m.sources.includes(c.source) && isSameHotel(m, c));
+    // A source can list one hotel twice (HotelsCasa: "Sidra Pristine Hotel and Portico Halls" and "… & Portico
+    // Halls", 20 m apart); its own listings merge only when on the same spot with the same distinctive name.
+    // The nearest qualifying hotel, so a listing joins the right one of two same-named neighbours.
+    let match: MergedHotel | undefined;
+    let best = Infinity;
+    for (const m of merged) {
+      const km = haversineKm(m, c);
+      const same = m.sources.includes(c.source)
+        ? km <= SAME_SPOT_KM && sameDistinctiveName(m.name, c.name)
+        : isSameHotel(m, c);
+      if (same && km < best) {
+        match = m;
+        best = km;
+      }
+    }
     if (!match) {
       merged.push({
         hotel_id: id,
@@ -84,7 +135,7 @@ export function mergeCandidates(candidates: HotelCandidate[]): MergedHotel[] {
       continue;
     }
     match.also_ids.push(id);
-    match.sources.push(c.source);
+    if (!match.sources.includes(c.source)) match.sources.push(c.source);
     match.prices.push(...c.prices);
     match.stars ??= c.stars;
     // Keep the rating backed by more reviews.

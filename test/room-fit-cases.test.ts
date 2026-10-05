@@ -369,6 +369,67 @@ describe("get_hotel_rates regressions", () => {
     }
   });
 
+  it("answers for the hotel asked about when the re-check finds it under another source's listing", async () => {
+    // Live, Thiruvananthapuram: trivago's "ROYAL INN" (7.5, 633 reviews) came back as Google's "Treebo Trip
+    // Royal Inn" (7.6, 66 reviews) with Google's id when trivago's re-check missed it.
+    let tvCalls = 0;
+    const tv = provider("trivago", async () =>
+      tvCalls++ === 0
+        ? [
+            listing("trivago", "tv1", [quote("trivago", 3000, { seller: "Agoda" })], {
+              name: "ROYAL INN",
+              rating_10: 7.5,
+              review_count: 633,
+            }),
+          ]
+        : [],
+    );
+    let gCalls = 0;
+    const google = provider("serpapi", async () =>
+      gCalls++ === 0
+        ? []
+        : [
+            listing("serpapi", "g1", [quote("serpapi", 3300, { seller: "Booking.com" })], {
+              name: "Treebo Trip Royal Inn",
+              lat: 28.6436,
+              rating_10: 7.6,
+              review_count: 66,
+            }),
+          ],
+    );
+    const registry = new ProviderRegistry();
+    [tv.info, google.info, FX_INFO, XOTELO_INFO].forEach((i) => registry.register(i));
+    const c = await connect(
+      testDeps({
+        registry,
+        hotelProviders: [tv, google],
+        memory: new HotelMemory(),
+        xotelo: { info: XOTELO_INFO, rates: vi.fn(async () => []) },
+        trivago: { info: TRIVAGO_INFO, lookup: vi.fn(async () => null) },
+        now: () => new Date(T),
+      }),
+    );
+    const s = await c.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...stay } });
+    const id = (s.structuredContent as { hotels: { hotel_id: string }[] }).hotels[0]!.hotel_id;
+    expect(id).toBe("trivago:tv1");
+    const r = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...stay } });
+    const out = r.structuredContent as {
+      hotel: { hotel_id: string; also_ids: string[]; name: string; rating_10: number; review_count: number };
+      notes: string[];
+    };
+    expect(out.hotel).toMatchObject({
+      hotel_id: "trivago:tv1",
+      name: "ROYAL INN",
+      rating_10: 7.5,
+      review_count: 633,
+    });
+    expect(out.hotel.also_ids).toContain("serpapi:g1");
+    expect(out.notes.join("\n")).toMatch(/lists this hotel as "Treebo Trip Royal Inn"/);
+    // The same id keeps resolving to the same hotel.
+    const again = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...stay } });
+    expect((again.structuredContent as { hotel: { name: string } }).hotel.name).toBe("ROYAL INN");
+  });
+
   it("reports an exchange-rate failure from a direct lookup as source fx", async () => {
     let tvCalls = 0;
     const tv = provider("trivago", async () =>
