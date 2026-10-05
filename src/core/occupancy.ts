@@ -24,7 +24,8 @@ const MULTI_ROOM_RISK = new Set(["trivago", "xotelo"]);
  */
 export function roomCapacity(room: string): number | null {
   const name = room.toLowerCase();
-  if (/\b(dorm|dormitory|bunk|bed in)\b/.test(name)) return null;
+  // "Four Bedroom" names a unit's size, not how many it sleeps; dormitory beds are sold per bed.
+  if (/\b(dorm|dormitory|bunk|bed in|bedrooms?|bhk)\b/.test(name)) return null;
   const n = name.match(/\b(\d)[\s-]*(bed|bedded|person|persons|pax|people|guest|guests|sharing)\b/);
   if (n) return Number(n[1]);
   const words: [RegExp, number][] = [
@@ -85,15 +86,35 @@ export function cheapestSingleRoom(prices: PriceQuote[]): PriceQuote | null {
   return best;
 }
 
-export type SingleRoomVerdict = "plausible_single_room" | "looks_like_2_rooms" | "implausible" | "unknown";
+export type SingleRoomVerdict =
+  | "priced_as_2_adults"
+  | "plausible_single_room"
+  | "looks_like_2_rooms"
+  | "unusually_high"
+  | "implausible"
+  | "unknown";
+
+export const SINGLE_ROOM_VERDICTS = [
+  "priced_as_2_adults",
+  "plausible_single_room",
+  "looks_like_2_rooms",
+  "unusually_high",
+  "implausible",
+  "unknown",
+] as const;
 
 /** Largest party the doubling test can judge: beyond 4, three or more rooms make the ratio ambiguous. */
 export const VERDICT_MAX_GUESTS = 4;
 
 /**
- * Compares a price for a party of 3–4 with the same seller's two-adult price for the same hotel and dates.
- * About exactly double means two double rooms; four times or more is not a believable single room. Larger
- * parties are not judged: a three-room price (~3×) would look like a plausible single room.
+ * Compares a price for a party of 3–4 with the same seller's two-adult price for the same hotel and dates
+ * (bands from live checks, 2026-10-05):
+ * - ≤1.1×: the seller ignored the party size, so it is probably a two-person room;
+ * - 1.1–1.85×: an extra-guest charge or a bigger room — plausible as one room;
+ * - 1.85–2.15×: about double — looks like two rooms;
+ * - 2.15–4×: unusually high for one room; check the room type;
+ * - ≥4×: not a believable single-room price.
+ * Larger parties are not judged: three rooms (~3×) would be ambiguous.
  */
 export function singleRoomVerdict(
   partyInr: number | null,
@@ -104,6 +125,8 @@ export function singleRoomVerdict(
   if (partyInr === null || twoAdultInr === null || twoAdultInr <= 0) return "unknown";
   const ratio = partyInr / twoAdultInr;
   if (ratio >= 4) return "implausible";
-  if (Math.abs(ratio - 2) <= 0.03) return "looks_like_2_rooms";
+  if (ratio > 2.15) return "unusually_high";
+  if (ratio >= 1.85) return "looks_like_2_rooms";
+  if (ratio <= 1.1) return "priced_as_2_adults";
   return "plausible_single_room";
 }

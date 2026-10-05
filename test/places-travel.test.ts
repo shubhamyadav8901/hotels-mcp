@@ -332,6 +332,65 @@ describe("travel tools over MCP", () => {
     expect((r.content as { text: string }[])[0]!.text).toMatch(/search_hotels again/);
   });
 
+  it("resolve_place says when a named railway station doesn't exist and lists real ones", async () => {
+    const registry = new ProviderRegistry();
+    registry.register({
+      id: "photon",
+      name: "Photon",
+      kind: "geocoding",
+      official: true,
+      needsKey: false,
+      limitations: [],
+    });
+    const g = new Gazetteer({
+      stations,
+      airports,
+      busStations,
+      registry,
+      geocoders: [
+        {
+          id: "photon",
+          search: async () => [
+            {
+              name: "Hill Town",
+              context: "Kerala",
+              category: "place",
+              type: "town",
+              lat: 28.9,
+              lng: 77.3,
+              source: "photon",
+            },
+          ],
+        },
+      ],
+    });
+    const client = await connect(testDeps({ gazetteer: g }));
+    const r = await client.callTool({
+      name: "resolve_place",
+      arguments: { query: "Hill Town railway station" },
+    });
+    const notes = (r.structuredContent as { notes: string[] }).notes.join(" ");
+    expect(notes).toMatch(
+      /No railway station matches "Hill Town railway station"\. Nearest stations to Hill Town: .*\(XYZ|DLI|NDLS/,
+    );
+  });
+
+  it("does not claim a railway station is missing for bus-station queries", async () => {
+    const client = await connect(testDeps({ gazetteer: gazetteer().g }));
+    const r = await client.callTool({
+      name: "resolve_place",
+      arguments: { query: "Kashmere Gate ISBT bus station" },
+    });
+    expect((r.structuredContent as { notes: string[] }).notes.join(" ")).not.toMatch(/No railway station/);
+  });
+
+  it("nearestStations skips halts even when they are the nearest points", () => {
+    const { g } = gazetteer();
+    const near = g.nearestStations({ lat: 28.7, lng: 77.3 }, 150, 1);
+    expect(near[0]).toMatchObject({ kind: "station" });
+    expect(near[0]?.code).not.toBe("XYZ");
+  });
+
   it("resolve_place returns nearby transport for coordinates", async () => {
     const client = await connect(deps());
     const r = await client.callTool({ name: "resolve_place", arguments: { lat: 28.643, lng: 77.2194 } });

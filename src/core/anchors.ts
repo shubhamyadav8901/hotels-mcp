@@ -237,6 +237,16 @@ export class Gazetteer {
     return { anchors: out.slice(0, limit), geocoder_errors };
   }
 
+  /** Nearest railway stations within `maxKm`, nearest first (for places with no station of their own). */
+  nearestStations(p: LatLng, maxKm = 150, limit = 3): (Anchor & { distance_km: number })[] {
+    // Filter halts before limiting, so a halt-dense area still yields its nearest proper stations.
+    return this.stationIndex
+      .within(p, maxKm)
+      .filter(({ item }) => item.kind === "station")
+      .slice(0, limit)
+      .map(({ item, km }) => ({ ...stationAnchor(item), distance_km: roundTo(km, 1) }));
+  }
+
   nearby(p: LatLng): NearbyAnchors {
     const withKm =
       <T>(make: (r: T) => Anchor) =>

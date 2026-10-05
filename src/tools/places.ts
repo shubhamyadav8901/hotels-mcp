@@ -5,6 +5,13 @@ import { AppError } from "../core/errors.js";
 import { handle, readOnly } from "./common.js";
 import { AnchorOut } from "./points.js";
 
+// A railway station explicitly (bare "station" counts unless the query is about buses).
+const RAIL_WORDS = /\b(railway|rly|junction|jn|train)\b/i;
+const STATION_WORD = /\b(station|stn)\b/i;
+const BUS_WORDS = /\b(bus|isbt|depot|stand)\b/i;
+const asksForRailwayStation = (q: string) =>
+  RAIL_WORDS.test(q) || (STATION_WORD.test(q) && !BUS_WORDS.test(q));
+
 const NearOut = AnchorOut.extend({ distance_km: z.number() });
 
 export function registerPlaceTools(server: McpServer, deps: { gazetteer: Gazetteer }): void {
@@ -57,6 +64,20 @@ export function registerPlaceTools(server: McpServer, deps: { gazetteer: Gazette
       });
       for (const e of geocoder_errors) notes.push(`Geocoder unavailable: ${e}`);
       if (anchors.length === 0) notes.push("No matches; try a more specific name or add the city.");
+      // Asked for a station that doesn't exist (e.g. "Munnar railway station"): say so and name real ones.
+      if (
+        (!a.kind || a.kind === "station") &&
+        asksForRailwayStation(a.query!) &&
+        !anchors.some((x) => x.kind === "station") &&
+        anchors[0]
+      ) {
+        const near = deps.gazetteer.nearestStations(anchors[0]);
+        notes.push(
+          near.length
+            ? `No railway station matches "${a.query}". Nearest stations to ${anchors[0].name}: ${near.map((s) => `${s.name} (${s.code}, ${s.distance_km} km straight-line)`).join("; ")}.`
+            : `No railway station matches "${a.query}", and none lies within 150 km of ${anchors[0].name}.`,
+        );
+      }
       return { matches: anchors, nearby: null, notes };
     }),
   );

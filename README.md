@@ -153,8 +153,10 @@ e.g. a HotelsCasa "Family Room"), `likely` (the source searched for the party bu
 price) for 3+ guests under a one-room request, so their prices for larger parties are `unverified`. When a
 hotel's cheapest price is unverified, `cheapest_single_room` gives its cheapest confirmed-or-likely price, and
 `get_hotel_rates` with `check_single_room: true` re-prices the unverified sources for 2 adults and gives each
-price a verdict: `plausible_single_room`, `looks_like_2_rooms` (≈2.00×), `implausible` (≥4×) or `unknown` (no
-2-adult price, or a party over 4, where three rooms would not show as doubling). Sorting by price, `max_price_inr`
+price a verdict from its ratio to the same seller's 2-adult price: `priced_as_2_adults` (≤1.1×, probably a
+two-person room), `plausible_single_room` (1.1–1.85×), `looks_like_2_rooms` (1.85–2.15×), `unusually_high`
+(2.15–4×), `implausible` (≥4×) or `unknown` (no 2-adult price, or a party over 4). If the live re-check cannot find
+the hotel, it uses the prices the search returned for the same stay and party. Sorting by price, `max_price_inr`
 and `plan_stays` scoring use a hotel's cheapest single-room price when it has one. An agent can search broadly
 and check only its shortlist (each check takes one extra search of trivago and Xotelo, ~15–25 s).
 

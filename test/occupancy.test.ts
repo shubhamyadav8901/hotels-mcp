@@ -62,7 +62,11 @@ describe("singleRoomVerdict and cheapestSingleRoom", () => {
   it.each([
     [12000, 6000, "looks_like_2_rooms"],
     [10425, 5213, "looks_like_2_rooms"],
-    [8085, 2840, "plausible_single_room"],
+    [8085, 2840, "unusually_high"],
+    [2697, 1767, "plausible_single_room"],
+    [1979, 1039, "looks_like_2_rooms"],
+    [2237, 2237, "priced_as_2_adults"],
+    [2843, 955, "unusually_high"],
     [102375, 12187, "implausible"],
     [8000, null, "unknown"],
   ])("%s vs 2-adult %s → %s", (party, two, verdict) => {
@@ -358,5 +362,73 @@ describe("single-room check failures", () => {
     };
     expect(out.prices[0]!.single_room_check.verdict).toBe("unknown");
     expect(out.sources_failed.map((f) => f.source)).toContain("single_room_check:trivago");
+  });
+});
+
+describe("agent-test fixes", () => {
+  it("does not read 'N Bedroom' as how many a room sleeps", () => {
+    const label = (room: string) => occupancyLabel(quote("hotelscasa", 1, { room }), 4).occupancy;
+    expect(label("Four Bedroom, Room Only")).toBe("likely");
+    expect(label("Five Bedroom Standard")).toBe("likely");
+    expect(label("Deluxe Four Bed AC")).toBe("confirmed");
+  });
+
+  it("get_hotel_rates falls back to the search's prices when the live re-check misses the hotel", async () => {
+    let calls = 0;
+    const tv: HotelSearchProvider = {
+      info: {
+        id: "trivago",
+        name: "trivago",
+        kind: "hotel-prices",
+        official: true,
+        needsKey: false,
+        limitations: [],
+      },
+      // Lists the hotel only on the first (search) call, like trivago's fixed 25 results around a point.
+      search: vi.fn(async () =>
+        calls++ === 0
+          ? [
+              {
+                source: "trivago",
+                source_id: "h1",
+                name: "Sunrise Residency",
+                lat: 28.6435,
+                lng: 77.2194,
+                stars: 3,
+                rating_10: 8,
+                review_count: 10,
+                url: null,
+                fetched_at: T,
+                prices: [{ ...quote("trivago", 3000), per_night_inr: null }],
+              },
+            ]
+          : [],
+      ),
+    };
+    const registry = new ProviderRegistry();
+    [tv.info, FX_INFO, XOTELO_INFO].forEach((i) => registry.register(i));
+    const c = await connect(
+      testDeps({
+        registry,
+        hotelProviders: [tv],
+        memory: new HotelMemory(),
+        xotelo: { info: XOTELO_INFO, rates: vi.fn(async () => []) },
+        now: () => new Date(T),
+      }),
+    );
+    const dates = { check_in: "2026-11-10", check_out: "2026-11-11", adults: 4 };
+    const s = await c.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...dates } });
+    const id = (s.structuredContent as { hotels: { hotel_id: string }[] }).hotels[0]!.hotel_id;
+    const r = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...dates } });
+    expect(r.isError).toBeFalsy();
+    const out = r.structuredContent as { prices: { per_night_inr: number }[]; notes: string[] };
+    expect(out.prices[0]!.per_night_inr).toBe(3000);
+    expect(out.notes.join(" ")).toMatch(/prices from the search/);
+    // A different party or dates does not reuse those prices.
+    const other = await c.callTool({
+      name: "get_hotel_rates",
+      arguments: { hotel_id: id, ...dates, adults: 2 },
+    });
+    expect(other.isError).toBe(true);
   });
 });

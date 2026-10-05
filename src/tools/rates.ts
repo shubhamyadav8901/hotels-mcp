@@ -9,8 +9,14 @@ import {
   type RankedHotel,
   type SourceFailure,
 } from "../core/hotel-search.js";
-import { isSameHotel, nameSimilarity } from "../core/merge.js";
-import { occupancyLabel, singleRoomVerdict, VERDICT_MAX_GUESTS } from "../core/occupancy.js";
+import { cheapest, isSameHotel, nameSimilarity } from "../core/merge.js";
+import {
+  cheapestSingleRoom,
+  occupancyLabel,
+  SINGLE_ROOM_VERDICTS,
+  singleRoomVerdict,
+  VERDICT_MAX_GUESTS,
+} from "../core/occupancy.js";
 import type { PriceQuote } from "../core/types.js";
 import { convertToInr } from "../providers/fx.js";
 import type { Xotelo } from "../providers/xotelo.js";
@@ -36,7 +42,7 @@ const QuoteOut = z.object({
   occupancy_note: z.string().nullable(),
   single_room_check: z
     .object({
-      verdict: z.enum(["plausible_single_room", "looks_like_2_rooms", "implausible", "unknown"]),
+      verdict: z.enum(SINGLE_ROOM_VERDICTS),
       two_adult_per_night_inr: z.number().nullable(),
       ratio: z.number().nullable(),
     })
@@ -112,7 +118,8 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       validateDates(a.check_in, a.check_out, deps.now());
       validateOccupancy(a.adults, a.children_ages);
       const guests = a.adults + a.children_ages.length;
-      const known = a.hotel_id ? deps.memory.get(a.hotel_id)?.hotel : undefined;
+      const remembered = a.hotel_id ? deps.memory.get(a.hotel_id) : undefined;
+      const known = remembered?.hotel;
       if (a.hotel_id && !known && (a.lat === undefined || a.lng === undefined || !a.name)) {
         throw new AppError(
           "NOT_FOUND",
@@ -143,7 +150,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         { sort: "distance", include_unpriced: true },
       );
       // Same listing by id, else the nearest listing that looks like the same property.
-      const match: RankedHotel | undefined =
+      let match: RankedHotel | undefined =
         r.hotels.find((h) => [h.hotel_id, ...h.also_ids].some((id) => targetIds.has(id))) ??
         r.hotels
           .filter((h) => isSameHotel(target, h))
@@ -152,6 +159,25 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
               nameSimilarity(target.name, y.name) - nameSimilarity(target.name, x.name) ||
               x.distance_km - y.distance_km,
           )[0];
+      // The live re-search can miss a hotel (trivago returns a fixed 25 around a point). Fall back to the
+      // prices the search returned for the same stay and party, and say so.
+      const sameRequest =
+        remembered &&
+        remembered.check_in === a.check_in &&
+        remembered.check_out === a.check_out &&
+        remembered.adults === a.adults &&
+        [...remembered.children_ages].sort().join(",") === [...a.children_ages].sort().join(",");
+      let fromSearch = false;
+      if (!match && sameRequest) {
+        const h = remembered.hotel;
+        match = {
+          ...h,
+          distance_km: 0,
+          cheapest: cheapest(h.prices),
+          cheapest_single_room: cheapestSingleRoom(h.prices),
+        };
+        fromSearch = true;
+      }
       if (!match) {
         throw new AppError(
           "NOT_FOUND",
@@ -195,6 +221,11 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       }
 
       const notes = [
+        ...(fromSearch
+          ? [
+              "No source listed this hotel on the live re-check, so these are the prices from the search that returned it (see fetched_at).",
+            ]
+          : []),
         occupancyNote(a.adults, a.children_ages),
         "Meta-search prices can differ at checkout; includes_taxes=null means the source does not say whether GST is included.",
       ];
@@ -219,10 +250,15 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
             });
           }
           for (const f of failures) sources_failed.push({ ...f, source: `single_room_check:${f.source}` });
+          if (fromSearch && baseline.size === 0) {
+            notes.push(
+              "single_room_check could not fetch 2-adult prices: the live re-check does not list this hotel, so its verdicts are unknown.",
+            );
+          }
           notes.push(
             guests > VERDICT_MAX_GUESTS
               ? `single_room_check gives no verdict for ${guests} guests: three or more rooms would not show as doubling.`
-              : "single_room_check compares each unverified price with the same seller's 2-adult price for this hotel: about 2.00x suggests two rooms; 4x or more is not a believable single room; unknown means no 2-adult price to compare.",
+              : "single_room_check compares each unverified price with the same seller's 2-adult price for this hotel: ≤1.1x priced_as_2_adults (probably a two-person room), 1.1–1.85x plausible_single_room, 1.85–2.15x looks_like_2_rooms, 2.15–4x unusually_high, ≥4x implausible; unknown means no 2-adult price to compare.",
           );
         } catch (err) {
           const e = toAppError(err);
@@ -251,12 +287,15 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         .sort((x, y) => (x.per_night_inr ?? Infinity) - (y.per_night_inr ?? Infinity));
       const inr = sorted.map((p) => p.per_night_inr).filter((v): v is number => v !== null);
 
-      deps.memory.remember([match], {
-        check_in: a.check_in,
-        check_out: a.check_out,
-        adults: a.adults,
-        children_ages: a.children_ages,
-      });
+      // Re-remembering the search's own prices would only extend how long stale prices are served.
+      if (!fromSearch) {
+        deps.memory.remember([match], {
+          check_in: a.check_in,
+          check_out: a.check_out,
+          adults: a.adults,
+          children_ages: a.children_ages,
+        });
+      }
       if (sorted.length === 0) notes.push("No source has a live price for this hotel on these dates.");
       return {
         hotel: {
@@ -283,7 +322,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
 }
 
 const SingleRoomCheck = z.object({
-  verdict: z.enum(["plausible_single_room", "looks_like_2_rooms", "implausible", "unknown"]),
+  verdict: z.enum(SINGLE_ROOM_VERDICTS),
   two_adult_per_night_inr: z.number().nullable(),
   ratio: z.number().nullable(),
 });
