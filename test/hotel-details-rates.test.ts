@@ -69,7 +69,7 @@ type Out = {
   sources_failed: { source: string }[];
 };
 
-describe("get_hotel_rates", () => {
+describe("get_hotel_details", () => {
   it("lists every source's price for a hotel from a recent search, cheapest first, in INR", async () => {
     const { deps } = setup([
       provider("trivago", [cand("trivago", "t1", "Sunrise Residency", [q("trivago", "MakeMyTrip", 3100)])]),
@@ -80,7 +80,7 @@ describe("get_hotel_rates", () => {
     const client = await connect(deps);
     await client.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...dates } });
     const r = await client.callTool({
-      name: "get_hotel_rates",
+      name: "get_hotel_details",
       arguments: { hotel_id: "hotelscasa:h1", ...dates },
     });
     expect(r.isError).toBeFalsy();
@@ -100,7 +100,7 @@ describe("get_hotel_rates", () => {
     ]);
     const client = await connect(deps);
     const r = await client.callTool({
-      name: "get_hotel_rates",
+      name: "get_hotel_details",
       arguments: { name: "Sunrise Residency", lat: 28.6435, lng: 77.2175, ...dates },
     });
     expect(xoteloRates).toHaveBeenCalledWith("g304551-d123", "2026-11-10", "2026-11-11", 2, []);
@@ -119,7 +119,7 @@ describe("get_hotel_rates", () => {
     );
     const client = await connect(deps);
     const r = await client.callTool({
-      name: "get_hotel_rates",
+      name: "get_hotel_details",
       arguments: { name: "Sunrise Residency", lat: 28.6435, lng: 77.2175, ...dates },
     });
     const out = r.structuredContent as Out;
@@ -131,13 +131,13 @@ describe("get_hotel_rates", () => {
     const { deps } = setup([provider("trivago", [])]);
     const client = await connect(deps);
     const unknown = await client.callTool({
-      name: "get_hotel_rates",
+      name: "get_hotel_details",
       arguments: { hotel_id: "trivago:zzz", ...dates },
     });
     expect(unknown.isError).toBe(true);
     expect((unknown.content as { text: string }[])[0]!.text).toMatch(/search_hotels again/);
     const missing = await client.callTool({
-      name: "get_hotel_rates",
+      name: "get_hotel_details",
       arguments: { name: "Ghost Inn", lat: 28.6, lng: 77.2, ...dates },
     });
     expect(missing.isError).toBe(true);

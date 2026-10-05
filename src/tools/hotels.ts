@@ -11,7 +11,7 @@ import { occupancyFields, occupancyNote, validateOccupancy } from "./occupancy.j
 import { AnchorOut, pointFields } from "./points.js";
 import { SourceOut, sourcesOut } from "./source-out.js";
 
-/** Per source in a search result, to keep a page readable; get_hotel_rates lists every offer. */
+/** Per source in a search result, to keep a page readable; get_hotel_details lists every offer. */
 const SEARCH_OFFERS = 3;
 const SEARCH_AMENITIES = 6;
 
@@ -48,7 +48,7 @@ const HotelOut = z.object({
   sources: z
     .array(SourceOut)
     .describe(
-      `Each source's own listing of this hotel (name, rating, details, link) with its offers, cheapest source first; up to ${SEARCH_OFFERS} offers per source here (get_hotel_rates lists all).`,
+      `Each source's own listing of this hotel (name, rating, details, link) with its offers, cheapest source first; up to ${SEARCH_OFFERS} offers per source here (get_hotel_details lists all).`,
     ),
 });
 
@@ -152,7 +152,7 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         "refundability, room and meals as the source names them). Every source is asked for one room for the " +
         "party, and each quotes the offer it chooses. With max_drive_minutes, keeps only hotels within that " +
         "drive time (OpenStreetMap routing with a traffic allowance) and adds drive_minutes. Results are " +
-        "paginated. Every offer per source is in get_hotel_rates; times to other places are in compare_hotels. " +
+        "paginated. Every offer per source is in get_hotel_details; times to other places are in compare_hotels. " +
         "coverage reports what each source returned and what limited it (sources return limited pages, so the " +
         "list is not exhaustive). Does not book.",
       inputSchema: {

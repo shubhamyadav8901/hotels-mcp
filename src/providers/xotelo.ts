@@ -4,7 +4,7 @@ import { gunzipSync } from "node:zlib";
 import { z } from "zod";
 import { AppError, upstreamText } from "../core/errors.js";
 import { haversineKm } from "../core/geo.js";
-import type { HotelCandidate, HotelSearchQuery, LatLng, PriceQuote } from "../core/types.js";
+import type { HotelCandidate, HotelDetails, HotelSearchQuery, LatLng, PriceQuote } from "../core/types.js";
 import { DEFAULT_DATA_DIR } from "../data/datasets.js";
 import { TtlCache } from "../lib/cache.js";
 import { getJson, type HttpOptions } from "../lib/http.js";
@@ -54,6 +54,10 @@ const ListItem = z.object({
   review_summary: z.object({ rating: z.number().nullish(), count: z.number().nullish() }).nullish(),
   price_ranges: z.object({ minimum: z.number().nullish(), maximum: z.number().nullish() }).nullish(),
   geo: z.object({ latitude: z.number(), longitude: z.number() }).nullish(),
+  image: z.string().nullish(),
+  // Always empty in live lists so far (2026-10); read loosely: plain strings or {name, count}-like objects.
+  mentions: z.array(z.unknown()).nullish(),
+  merchandising_labels: z.array(z.unknown()).nullish(),
 });
 
 const ListPayload = z.object({
@@ -431,6 +435,7 @@ export function createXotelo(opts: XoteloOptions) {
         fetched_at: fetchedAt,
         ...(h.item.accommodation_type ? { property_type: h.item.accommodation_type } : {}),
         ...typicalPrice(h.item),
+        ...listDetails(h.item),
       };
     });
     return { hotels: candidates, coverage_note };
@@ -456,6 +461,46 @@ function typicalPrice(item: XoteloListItem): Pick<HotelCandidate, "typical_price
   return min != null && max != null && min > 0 && max >= min
     ? { typical_price: { min, max, currency: "USD" } }
     : {};
+}
+
+/**
+ * Photo, review mentions and badges from a `/list` item, only when stated. A mention with a numeric count
+ * becomes a review topic; a bare mention (no count) is kept as a label, like the merchandising labels.
+ */
+function listDetails(item: XoteloListItem): Pick<HotelCandidate, "details"> {
+  const topics: NonNullable<HotelDetails["review_topics"]> = [];
+  const labels: string[] = [];
+  const addLabel = (name: string) => {
+    if (!labels.includes(name)) labels.push(name);
+  };
+  for (const m of item.mentions ?? []) {
+    const name = labelText(m);
+    if (!name) continue;
+    const o = typeof m === "object" ? (m as Record<string, unknown>) : {};
+    const count = [o.mentions, o.count, o.total_mentioned].find((c) => typeof c === "number" && c >= 0);
+    if (typeof count === "number") topics.push({ name, mentions: count });
+    else addLabel(name);
+  }
+  for (const l of item.merchandising_labels ?? []) {
+    const name = labelText(l);
+    if (name) addLabel(name);
+  }
+  const image = item.image?.trim();
+  const details: HotelDetails = {
+    ...(image ? { images: [image] } : {}),
+    ...(topics.length ? { review_topics: topics } : {}),
+    ...(labels.length ? { labels } : {}),
+  };
+  return Object.keys(details).length ? { details } : {};
+}
+
+/** A label's text: the string itself, or an object's name/text/label/title; "" when there is none. */
+function labelText(v: unknown): string {
+  if (typeof v === "string") return v.trim();
+  if (!v || typeof v !== "object") return "";
+  const o = v as Record<string, unknown>;
+  const text = [o.name, o.text, o.label, o.title].find((x) => typeof x === "string" && x.trim());
+  return typeof text === "string" ? text.trim() : "";
 }
 
 export type Xotelo = ReturnType<typeof createXotelo>;

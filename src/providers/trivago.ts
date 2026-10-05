@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AppError, upstreamText } from "../core/errors.js";
 import { coverPoints, haversineKm } from "../core/geo.js";
-import type { HotelCandidate, HotelSearchQuery } from "../core/types.js";
+import type { HotelCandidate, HotelDetails, HotelSearchQuery } from "../core/types.js";
 import { parseAmount, parseUpstream } from "./shared.js";
 import type { HotelSearchProvider, ProviderInfo, SearchOutcome } from "./types.js";
 import type { CallUpstream } from "./upstream-mcp.js";
@@ -39,6 +39,7 @@ const Accommodation = z.object({
   accommodation_url: z.string().nullish(),
   top_amenities: z.string().nullish(),
   distance: z.string().nullish(),
+  main_image: z.string().nullish(),
 });
 
 const Payload = z.union([
@@ -203,15 +204,26 @@ export function createTrivagoProvider(
   };
 }
 
-/** Amenities and area, only when trivago states them. */
-function details(a: z.infer<typeof Accommodation>): Pick<HotelCandidate, "amenities" | "area"> {
+/** Amenities, area, photo and distance to the centre, only when trivago states them. */
+function details(a: z.infer<typeof Accommodation>): Pick<HotelCandidate, "amenities" | "area" | "details"> {
   const amenities = (a.top_amenities ?? "")
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
-  // `distance` reads like "Kochi, 6.0 km to City centre": the area is the part before the first comma.
+  // `distance` reads like "Kochi, 6.0 km to City centre": the area is the part before the first comma and
+  // the distance to the centre the rest.
   const area = a.distance?.match(/^([^,]+),\s*[\d.]+\s*km\b/)?.[1]?.trim();
-  return { ...(amenities.length ? { amenities } : {}), ...(area ? { area } : {}) };
+  const toCentre = a.distance?.replace(/^[^,]*,/, "").trim();
+  const image = a.main_image?.trim();
+  const extra: HotelDetails = {
+    ...(image ? { images: [image] } : {}),
+    ...(toCentre ? { distance_to_centre: toCentre } : {}),
+  };
+  return {
+    ...(amenities.length ? { amenities } : {}),
+    ...(area ? { area } : {}),
+    ...(Object.keys(extra).length ? { details: extra } : {}),
+  };
 }
 
 export function nightsBetween(checkIn: string, checkOut: string): number {

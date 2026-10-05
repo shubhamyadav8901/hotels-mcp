@@ -58,7 +58,7 @@ describe("trivago provider", () => {
       fetched_at: "2026-10-05T10:00:00.000Z",
     });
     expect(first?.prices[0]).toMatchObject({ seller: "Booking.com", per_night: 3250, currency: "INR" });
-    // Upstream formatting instructions and images never leave the provider.
+    // Upstream formatting instructions never leave the provider; the photo URL is kept under details.
     expect(JSON.stringify(hotels)).not.toMatch(/system_message|IMPORTANT|main_image|base64/);
   });
 
@@ -162,6 +162,19 @@ describe("HotelsCasa provider", () => {
     const call = vi.fn().mockResolvedValue(fixture("hotelscasa-get-hotel-not-found.json"));
     await expect(createHotelsCasaProvider(call, { now: NOW }).search(query)).rejects.toMatchObject({
       code: "UPSTREAM_UNAVAILABLE",
+    });
+  });
+});
+
+describe("HotelsCasa errors", () => {
+  it("passes HotelsCasa's own error text through, sanitised", async () => {
+    const call = vi.fn().mockResolvedValue({
+      isError: true,
+      content: [{ type: "text", text: '{"error":"Error: KV put() limit exceeded for the day."}' }],
+    });
+    await expect(createHotelsCasaProvider(call, { now: NOW }).search(query)).rejects.toMatchObject({
+      code: "UPSTREAM_UNAVAILABLE",
+      message: "HotelsCasa reported an error for this search: KV put() limit exceeded for the day.",
     });
   });
 });
@@ -276,5 +289,138 @@ describe("trivago name lookup", () => {
         adults: 2,
       }),
     ).toBeNull();
+  });
+});
+
+describe("trivago details", () => {
+  it("keeps the main image and the distance to the centre, only when stated", async () => {
+    const base = fixture("trivago-radius-search.json") as {
+      structuredContent: { accommodations: Record<string, unknown>[] };
+    };
+    const [a, b, c] = base.structuredContent.accommodations;
+    const accommodations = [
+      a,
+      { ...b, main_image: null, distance: "3.0 km to City centre" },
+      { ...c, main_image: " ", distance: null },
+    ];
+    const call = vi.fn().mockResolvedValue({ structuredContent: { accommodations } });
+    const hotels = await createTrivagoProvider(call, NOW).search({ ...query, radius_km: 50 });
+    const byId = new Map(hotels.map((h) => [h.source_id, h]));
+
+    expect(byId.get("a1b2c3d4e5f6")?.details).toEqual({
+      images: [a!.main_image],
+      distance_to_centre: "3.4 km to City centre",
+    });
+    expect(byId.get("a1b2c3d4e5f6")?.area).toBe("Delhi");
+    expect(byId.get("0f9e8d7c6b5a")?.details).toEqual({ distance_to_centre: "3.0 km to City centre" });
+    expect(byId.get("123abc456def")).not.toHaveProperty("details");
+  });
+});
+
+describe("HotelsCasa hotel details", () => {
+  const detailsQuery = { check_in: "2026-11-10", check_out: "2026-11-11", adults: 2 };
+
+  it("calls get_hotel in English with the dates and party", async () => {
+    const call = vi.fn().mockResolvedValue(fixture("hotelscasa-get-hotel.json"));
+    const provider = createHotelsCasaProvider(call, { now: NOW });
+    await provider.details("fixture-inn-paharganj-new-delhi", { ...detailsQuery, children_ages: [4, 9] });
+    expect(call).toHaveBeenCalledWith("get_hotel", {
+      hotel_key: "fixture-inn-paharganj-new-delhi",
+      check_in: "2026-11-10",
+      check_out: "2026-11-11",
+      adults: 2,
+      children: 2,
+      children_ages: "4,9",
+      lang: "en",
+    });
+    await provider.details("x", detailsQuery);
+    expect(call).toHaveBeenLastCalledWith("get_hotel", {
+      hotel_key: "x",
+      check_in: "2026-11-10",
+      check_out: "2026-11-11",
+      adults: 2,
+      lang: "en",
+    });
+  });
+
+  it("maps address, photos, guest summary (even cut off) and important info; amenities and times go on the listing", async () => {
+    const call = vi.fn().mockResolvedValue(fixture("hotelscasa-get-hotel.json"));
+    const { details, listing } = await createHotelsCasaProvider(call, { now: NOW }).details(
+      "fixture-inn-paharganj-new-delhi",
+      detailsQuery,
+    );
+    expect(details).toEqual({
+      description: "Hotel ficticio cerca de la estación. Texto sintético para pruebas.",
+      address: "1 Fixture Road, Opp Synthetic Station, New Delhi,",
+      images: [
+        "https://static.cupid.travel/hotels/fixture_fixture-.jpg",
+        "https://static.cupid.travel/hotels/fixture_2.jpg",
+      ],
+      category_scores: [{ name: "Location", score: 9 }],
+      pros: ["Close to the station"],
+      important_info: ["Este alojamiento no acepta mascotas.", "A deposit may be required at the property."],
+    });
+    expect(listing).toMatchObject({
+      source: "hotelscasa",
+      source_id: "fixture-inn-paharganj-new-delhi",
+      property_type: "Hotel",
+      amenities: ["Wi-Fi gratis", "Recepción las 24 horas", "Terraza en la azotea"],
+      check_in_time: "12:00 PM",
+      check_out_time: "11:00 AM",
+    });
+    expect(listing?.prices[0]).toMatchObject({
+      per_night: 18.5,
+      currency: "EUR",
+      room: "Deluxe Double Room",
+    });
+  });
+
+  it("parses a complete guest summary, caps photos at 5, translates the type and omits unstated parts", async () => {
+    const base = fixture("hotelscasa-get-hotel.json") as { structuredContent: Record<string, unknown> };
+    const sc = base.structuredContent;
+    const call = vi.fn().mockResolvedValue({
+      structuredContent: {
+        hotel: { ...(sc.hotel as object), type: "Posadas" },
+        availability: { checked: false },
+        photos: Array.from({ length: 7 }, (_, i) => `https://example.invalid/p${i}.jpg`),
+        guest_summary: JSON.stringify({
+          pros: ["Quiet"],
+          cons: ["Small rooms"],
+          categories: [{ name: "Staff", rating: 8.5 }],
+        }),
+      },
+    });
+    const { details, listing } = await createHotelsCasaProvider(call, { now: NOW }).details(
+      "k",
+      detailsQuery,
+    );
+    expect(details).toEqual({
+      images: [0, 1, 2, 3, 4].map((i) => `https://example.invalid/p${i}.jpg`),
+      category_scores: [{ name: "Staff", score: 8.5 }],
+      pros: ["Quiet"],
+      cons: ["Small rooms"],
+    });
+    expect(listing?.property_type).toBe("Inn");
+    // Not checked live: the "from" price is not presented as a price for the dates.
+    expect(listing?.prices).toEqual([]);
+    expect(listing).not.toHaveProperty("amenities");
+    expect(listing).not.toHaveProperty("check_in_time");
+  });
+
+  it("keeps the details when the hotel object is too slim for a listing", async () => {
+    const call = vi.fn().mockResolvedValue({
+      structuredContent: { hotel: { name: "No coordinates" }, address: "2 Fixture Lane" },
+    });
+    const result = await createHotelsCasaProvider(call, { now: NOW }).details("k", detailsQuery);
+    expect(result).toEqual({ details: { address: "2 Fixture Lane" } });
+  });
+
+  it("reports an unknown hotel_key as NOT_FOUND", async () => {
+    const call = vi.fn().mockResolvedValue(fixture("hotelscasa-get-hotel-not-found.json"));
+    await expect(
+      createHotelsCasaProvider(call).details("no-such-hotel-xyz", detailsQuery),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   });
 });

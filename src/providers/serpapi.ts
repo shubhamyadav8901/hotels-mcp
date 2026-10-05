@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { z } from "zod";
 import { AppError, upstreamText } from "../core/errors.js";
 import { haversineKm } from "../core/geo.js";
-import type { HotelCandidate, HotelSearchQuery, PriceQuote } from "../core/types.js";
+import type { HotelCandidate, HotelDetails, HotelSearchQuery, PriceQuote } from "../core/types.js";
 import { TtlCache } from "../lib/cache.js";
 import { getJson, type HttpOptions } from "../lib/http.js";
 import { parseUpstream } from "./shared.js";
@@ -12,6 +12,8 @@ import type { HotelSearchProvider, ProviderInfo, SearchOutcome } from "./types.j
 export const SERPAPI_URL = "https://serpapi.com/search.json";
 const GOOGLE_LOWEST = "Google Hotels (lowest listed)";
 const CACHE_TTL_MS = 24 * 3_600_000;
+const MAX_IMAGES = 5;
+const MAX_NEARBY = 10;
 const TIMEOUT_MS = 20_000;
 
 export const SERPAPI_INFO: ProviderInfo = {
@@ -39,6 +41,46 @@ const Rate = z
   })
   .nullish();
 
+const SitePrice = z.object({
+  // Google sometimes lists a price without naming its site (seen live, 2026-10-05); such a price is
+  // skipped rather than failing the whole response.
+  source: z.string().nullish(),
+  link: z.string().nullish(),
+  rate_per_night: Rate,
+  total_rate: Rate,
+});
+
+/** Fields Google shows both in the search listing and on the hotel's own page. */
+const Described = {
+  description: z.string().nullish(),
+  images: z
+    .array(z.object({ thumbnail: z.string().nullish(), original_image: z.string().nullish() }))
+    .nullish(),
+  location_rating: z.number().nullish(),
+  reviews_breakdown: z
+    .array(
+      z.object({
+        name: z.string().nullish(),
+        description: z.string().nullish(),
+        total_mentioned: z.number().nullish(),
+        positive: z.number().nullish(),
+        negative: z.number().nullish(),
+      }),
+    )
+    .nullish(),
+  nearby_places: z
+    .array(
+      z.object({
+        name: z.string().nullish(),
+        transportations: z
+          .array(z.object({ type: z.string().nullish(), duration: z.string().nullish() }))
+          .nullish(),
+      }),
+    )
+    .nullish(),
+  excluded_amenities: z.array(z.string()).nullish(),
+};
+
 const Property = z.object({
   type: z.string().nullish(),
   name: z.string(),
@@ -54,18 +96,8 @@ const Property = z.object({
   check_out_time: z.string().nullish(),
   rate_per_night: Rate,
   total_rate: Rate,
-  prices: z
-    .array(
-      z.object({
-        // Google sometimes lists a price without naming its site (seen live, 2026-10-05); such a price is
-        // skipped rather than failing the whole response.
-        source: z.string().nullish(),
-        link: z.string().nullish(),
-        rate_per_night: Rate,
-        total_rate: Rate,
-      }),
-    )
-    .nullish(),
+  prices: z.array(SitePrice).nullish(),
+  ...Described,
 });
 
 const Payload = z.object({
@@ -76,6 +108,43 @@ const Payload = z.object({
 });
 
 type Prop = z.infer<typeof Property>;
+
+/** Google's page for one hotel (engine=google_hotels with a property_token). */
+const DetailsPayload = z.object({
+  search_metadata: z.object({ status: z.string().nullish() }).nullish(),
+  error: z.string().nullish(),
+  link: z.string().nullish(),
+  address: z.string().nullish(),
+  phone: z.string().nullish(),
+  rate_per_night: Rate,
+  total_rate: Rate,
+  prices: z.array(SitePrice).nullish(),
+  featured_prices: z
+    .array(
+      SitePrice.extend({
+        rooms: z.array(z.object({ name: z.string().nullish(), rate_per_night: Rate })).nullish(),
+      }),
+    )
+    .nullish(),
+  ...Described,
+});
+
+type Details = z.infer<typeof DetailsPayload>;
+
+/** One hotel on Google: its stay details plus one price per booking site. */
+export interface GoogleHotelDetails {
+  details: HotelDetails;
+  prices: PriceQuote[];
+}
+
+export interface GoogleDetailsQuery {
+  check_in: string;
+  check_out: string;
+  adults: number;
+  children_ages?: number[] | undefined;
+  /** Free text for Google's q parameter; the property token decides the hotel. */
+  hotel_name?: string | undefined;
+}
 
 export interface SerpApiOptions {
   apiKey: string;
@@ -124,6 +193,30 @@ export function serpApiUrl(q: HotelSearchQuery, apiKey: string, baseUrl = SERPAP
   return url.toString();
 }
 
+/** Builds the Google Hotels property-details request URL (exported for tests). */
+export function serpApiDetailsUrl(
+  propertyToken: string,
+  q: GoogleDetailsQuery,
+  apiKey: string,
+  baseUrl = SERPAPI_URL,
+): string {
+  const url = new URL(baseUrl);
+  const params: Record<string, string> = {
+    engine: "google_hotels",
+    q: q.hotel_name || "hotel",
+    property_token: propertyToken,
+    gl: "in",
+    hl: "en",
+    currency: "INR",
+    check_in_date: q.check_in,
+    check_out_date: q.check_out,
+    ...partyParams(q.adults, q.children_ages),
+    api_key: apiKey,
+  };
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  return url.toString();
+}
+
 function partyParams(adults: number, childrenAges: number[] = []): Record<string, string> {
   const params: Record<string, string> = { adults: String(adults) };
   if (childrenAges.length) {
@@ -146,6 +239,7 @@ export function createSerpApi(opts: SerpApiOptions) {
   } = opts;
   const http: HttpOptions = { ...opts.http, timeoutMs: opts.http.timeoutMs ?? TIMEOUT_MS };
   const cache = new TtlCache<{ props: Prop[]; fetchedAt: string; next: string | null }>(500, now);
+  const detailsCache = new TtlCache<GoogleHotelDetails>(500, now);
   const monthKey = () => new Date(now()).toISOString().slice(0, 7);
   let { month, used } = loadQuota();
   let writeFailed = false;
@@ -191,7 +285,10 @@ export function createSerpApi(opts: SerpApiOptions) {
   type Page = { props: Prop[]; fetchedAt: string; next: string | null };
 
   /** One SerpApi search against the quota; null when Google has no results, AppError on any other in-band error. */
-  async function request(url: string): Promise<z.infer<typeof Payload> | null> {
+  async function request<T extends { error?: string | null | undefined }>(
+    schema: z.ZodType<T>,
+    url: string,
+  ): Promise<T | null> {
     if (quotaRemaining() <= 0) {
       throw new AppError(
         "QUOTA_EXHAUSTED",
@@ -205,7 +302,7 @@ export function createSerpApi(opts: SerpApiOptions) {
     if (disk.month === month) used = Math.max(used, disk.used);
     used++;
     saveQuota();
-    const payload = parseUpstream("serpapi", Payload, await getJson(url, http));
+    const payload = parseUpstream("serpapi", schema, await getJson(url, http));
     if (payload.error) {
       // "hasn't returned any results" is a valid empty answer, not a failure.
       if (/hasn't returned any results|no results/i.test(payload.error)) return null;
@@ -224,7 +321,7 @@ export function createSerpApi(opts: SerpApiOptions) {
     // Everything that changes the request changes the cache key (the URL without the key).
     const key = withToken(serpApiUrl(q, "-"));
     return cache.getOrSet(key, CACHE_TTL_MS, async () => {
-      const payload = await request(withToken(serpApiUrl(q, apiKey, baseUrl)));
+      const payload = await request(Payload, withToken(serpApiUrl(q, apiKey, baseUrl)));
       const fetchedAt = new Date(now()).toISOString();
       if (!payload) return { props: [], fetchedAt, next: null };
       return {
@@ -293,6 +390,7 @@ export function createSerpApi(opts: SerpApiOptions) {
           ...(p.amenities?.length ? { amenities: p.amenities } : {}),
           ...(p.check_in_time ? { check_in_time: p.check_in_time } : {}),
           ...(p.check_out_time ? { check_out_time: p.check_out_time } : {}),
+          ...withDetails(described(p)),
         },
       ];
     });
@@ -309,11 +407,30 @@ export function createSerpApi(opts: SerpApiOptions) {
     };
   }
 
-  const provider: HotelSearchProvider & { quotaRemaining: () => number } = {
+  /**
+   * Google's own page for one hotel (by the property_token a search returned): address, phone, website and
+   * the rest of its details, plus one price per booking site for these dates. One search, cached 24 h.
+   */
+  async function details(propertyToken: string, q: GoogleDetailsQuery): Promise<GoogleHotelDetails> {
+    // The cache key is the URL without the key and without the free-text q: the token decides the hotel.
+    const key = serpApiDetailsUrl(propertyToken, { ...q, hotel_name: undefined }, "-");
+    return detailsCache.getOrSet(key, CACHE_TTL_MS, async () => {
+      const payload = await request(DetailsPayload, serpApiDetailsUrl(propertyToken, q, apiKey, baseUrl));
+      const fetchedAt = new Date(now()).toISOString();
+      if (!payload) return { details: {}, prices: [] };
+      return { details: pageDetails(payload), prices: pageQuotes(payload, fetchedAt) };
+    });
+  }
+
+  const provider: HotelSearchProvider & {
+    quotaRemaining: () => number;
+    details: (propertyToken: string, q: GoogleDetailsQuery) => Promise<GoogleHotelDetails>;
+  } = {
     info: SERPAPI_INFO,
     search: async (q) => (await searchWithCoverage(q)).hotels,
     searchWithCoverage,
     quotaRemaining,
+    details,
   };
   return provider;
 }
@@ -324,6 +441,7 @@ function quote(
   total: z.infer<typeof Rate>,
   url: string | null,
   fetchedAt: string,
+  room: string | null = null,
 ): PriceQuote | null {
   const perNight = rate?.extracted_lowest;
   if (perNight == null) return null;
@@ -338,7 +456,7 @@ function quote(
     available: null,
     refundable: null,
     url,
-    room: null,
+    room,
     fetched_at: fetchedAt,
   };
 }
@@ -366,6 +484,90 @@ function quotes(p: Prop, fetchedAt: string): PriceQuote[] {
   // Google's headline rate doesn't say which site offers it.
   const lowest = quote(GOOGLE_LOWEST, p.rate_per_night, p.total_rate, p.link ?? null, fetchedAt);
   return lowest ? [lowest] : [];
+}
+
+/**
+ * Per-site prices from a hotel's page: its `prices` list, else its featured offers, else its lowest rate. A
+ * price takes the name of the featured room offered by the same site at exactly that nightly price.
+ */
+function pageQuotes(d: Details, fetchedAt: string): PriceQuote[] {
+  const featured = d.featured_prices ?? [];
+  const roomFor = (site: string, perNight: number | null | undefined) =>
+    featured
+      .find((f) => f.source === site)
+      ?.rooms?.find((r) => r.name && perNight != null && r.rate_per_night?.extracted_lowest === perNight)
+      ?.name ?? null;
+  const sites = d.prices?.length ? d.prices : featured;
+  const perSite = sites
+    .map((s) =>
+      s.source
+        ? quote(
+            s.source,
+            s.rate_per_night,
+            s.total_rate,
+            s.link ?? d.link ?? null,
+            fetchedAt,
+            roomFor(s.source, s.rate_per_night?.extracted_lowest),
+          )
+        : null,
+    )
+    .filter((x): x is PriceQuote => x !== null);
+  if (perSite.length) return perSite;
+  const lowest = quote(GOOGLE_LOWEST, d.rate_per_night, d.total_rate, d.link ?? null, fetchedAt);
+  return lowest ? [lowest] : [];
+}
+
+/** Details only Google's hotel page has (address, phone, website), plus those the listing also shows. */
+function pageDetails(d: Details): HotelDetails {
+  return {
+    ...described(d),
+    ...(d.address?.trim() ? { address: d.address.trim() } : {}),
+    ...(d.phone?.trim() ? { phone: d.phone.trim() } : {}),
+    ...(d.link?.trim() ? { website: d.link.trim() } : {}),
+  };
+}
+
+/** Description, photos, location score, review topics, nearby places and missing amenities, when stated. */
+function described(p: { [K in keyof typeof Described]?: z.infer<(typeof Described)[K]> }): HotelDetails {
+  const images = (p.images ?? [])
+    .map((i) => i.original_image || i.thumbnail)
+    .filter((u): u is string => Boolean(u))
+    .slice(0, MAX_IMAGES);
+  const topics = (p.reviews_breakdown ?? []).flatMap((r) => {
+    // `description` is the readable label ("Public transit"); `name` is a short tag ("Transit").
+    const name = (r.description || r.name)?.trim();
+    if (!name || r.total_mentioned == null) return [];
+    return [
+      {
+        name,
+        mentions: r.total_mentioned,
+        ...(r.positive != null ? { positive: r.positive } : {}),
+        ...(r.negative != null ? { negative: r.negative } : {}),
+      },
+    ];
+  });
+  const nearby = (p.nearby_places ?? [])
+    .flatMap((n) => {
+      const name = n.name?.trim();
+      if (!name) return [];
+      const t = n.transportations?.[0];
+      const travel = [t?.type, t?.duration].filter(Boolean).join(" ");
+      return [{ name, ...(travel ? { travel } : {}) }];
+    })
+    .slice(0, MAX_NEARBY);
+  const excluded = (p.excluded_amenities ?? []).filter((a) => a.trim());
+  return {
+    ...(p.description?.trim() ? { description: p.description.trim() } : {}),
+    ...(images.length ? { images } : {}),
+    ...(p.location_rating != null ? { location_rating: p.location_rating } : {}),
+    ...(topics.length ? { review_topics: topics } : {}),
+    ...(nearby.length ? { nearby_places: nearby } : {}),
+    ...(excluded.length ? { excluded_amenities: excluded } : {}),
+  };
+}
+
+function withDetails(details: HotelDetails): Pick<HotelCandidate, "details"> {
+  return Object.keys(details).length ? { details } : {};
 }
 
 export type SerpApi = ReturnType<typeof createSerpApi>;

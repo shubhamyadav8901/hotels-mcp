@@ -372,3 +372,34 @@ describe("xotelo search budget", () => {
     expect(hotels.filter((h) => h.prices.length > 0)).toHaveLength(1);
   });
 });
+
+describe("xotelo list details", () => {
+  it("keeps the photo, counted mentions as review topics, and bare mentions and badges as labels", async () => {
+    const list = fixture("xotelo-list.json") as { result: { list: Record<string, unknown>[] } };
+    const [first, second] = list.result.list;
+    const { xotelo } = make({
+      list: {
+        ...list,
+        result: {
+          ...list.result,
+          list: [
+            {
+              ...first,
+              mentions: ["Budget", { name: "Rooftop view", count: 12 }, { text: "Near station" }, 3],
+              merchandising_labels: ["Breakfast included", "Budget"],
+            },
+            { ...second, image: null, mentions: null, merchandising_labels: [] },
+          ],
+        },
+      },
+    });
+    const hotels = await xotelo.search(query);
+    const byName = new Map(hotels.map((h) => [h.name, h]));
+    expect(byName.get(first!.name as string)?.details).toEqual({
+      images: [first!.image],
+      review_topics: [{ name: "Rooftop view", mentions: 12 }],
+      labels: ["Budget", "Near station", "Breakfast included"],
+    });
+    expect(byName.get(second!.name as string)).not.toHaveProperty("details");
+  });
+});

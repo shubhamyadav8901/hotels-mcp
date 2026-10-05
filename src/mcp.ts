@@ -4,6 +4,7 @@ import type { Config } from "./config.js";
 import { createFx } from "./providers/fx.js";
 import {
   createHotelsCasaProvider,
+  type HotelsCasaProvider,
   HOTELSCASA_TIMEOUT_MS,
   HOTELSCASA_TOOLS,
   HOTELSCASA_URL,
@@ -35,14 +36,14 @@ import {
 } from "./data/datasets.js";
 import { createNominatim, createPhoton } from "./providers/geocoders.js";
 import { createOsmLodging } from "./providers/osm-lodging.js";
-import { createSerpApi, SERPAPI_INFO } from "./providers/serpapi.js";
+import { createSerpApi, SERPAPI_INFO, type SerpApi } from "./providers/serpapi.js";
 import { createXotelo, loadXoteloKeys, type Xotelo } from "./providers/xotelo.js";
 import { createOsrm } from "./providers/osrm.js";
 import { RetiringRooms } from "./core/retiring.js";
 import { registerStayTools } from "./tools/stays.js";
 import { registerHotelTools } from "./tools/hotels.js";
 import { registerPlaceTools } from "./tools/places.js";
-import { registerRatesTool } from "./tools/rates.js";
+import { registerHotelDetailsTool } from "./tools/hotel-details.js";
 import { registerTravelTools } from "./tools/travel.js";
 import { registerSourcesTool } from "./tools/sources.js";
 
@@ -56,6 +57,10 @@ export interface Deps {
   xotelo: Pick<Xotelo, "rates" | "info">;
   /** Looks one known hotel up in trivago by name (id-checked). */
   trivago: Pick<TrivagoProvider, "lookup" | "info">;
+  /** HotelsCasa's hotel-details tool, for get_hotel_details. */
+  hotelscasa: Pick<HotelsCasaProvider, "details" | "info">;
+  /** Google's page for one hotel (SerpApi); null without a key. */
+  serp: Pick<SerpApi, "details" | "info"> | null;
   /** Hosted MCP clients (named by provider id), so the server can open their sessions at start. */
   upstreams: UpstreamMcpClient[];
   fx: { rates(): Promise<FxRates> };
@@ -100,7 +105,7 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
     manifest.datasets.lodging?.built_at ?? null,
   );
   // Inside searches Xotelo scans one list page per area and prices the 5 nearest hotels (each request is
-  // ~1.2 s apart); get_hotel_rates fetches full per-site prices for any single hotel.
+  // ~1.2 s apart); get_hotel_details fetches full per-site prices for any single hotel.
   const xotelo = createXotelo({
     http,
     keys: loadXoteloKeys(dir),
@@ -161,6 +166,8 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
     hotelProviders,
     xotelo,
     trivago,
+    hotelscasa,
+    serp: serpapi,
     upstreams: [trivagoClient, hotelscasaClient],
     fx,
     gazetteer,
@@ -202,7 +209,7 @@ export function createServer(deps: Deps): McpServer {
     now: deps.now,
     defaultMinRatingPct: deps.config.DEFAULT_MIN_RATING_PCT,
   });
-  registerRatesTool(server, {
+  registerHotelDetailsTool(server, {
     hotels: {
       registry: deps.registry,
       providers: deps.hotelProviders,
@@ -212,6 +219,8 @@ export function createServer(deps: Deps): McpServer {
     gazetteer: deps.gazetteer,
     xotelo: deps.xotelo,
     trivago: deps.trivago,
+    hotelscasa: deps.hotelscasa,
+    serp: deps.serp,
     memory: deps.memory,
     now: deps.now,
   });

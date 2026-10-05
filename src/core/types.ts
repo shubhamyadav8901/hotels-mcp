@@ -26,6 +26,35 @@ export interface PriceQuote {
   fetched_at: string;
 }
 
+/** Everything else a source says about a hotel, shown in full by get_hotel_details. All parts are optional. */
+export interface HotelDetails {
+  description?: string;
+  address?: string;
+  phone?: string;
+  website?: string;
+  /** Photo URLs (a few). */
+  images?: string[];
+  /** As the source words it, e.g. "6.0 km to City centre". */
+  distance_to_centre?: string;
+  /** Location score on a 0–5 scale (Google). */
+  location_rating?: number;
+  /** Category scores, e.g. HotelsCasa's cleanliness/staff, on the source's own scale. */
+  category_scores?: { name: string; score: number }[];
+  /** What reviews praise and criticise, in the source's words. */
+  pros?: string[];
+  cons?: string[];
+  /** Review topics with how often they are mentioned and how (Google; TripAdvisor mentions). */
+  review_topics?: { name: string; mentions: number; positive?: number; negative?: number }[];
+  /** Nearby places with how long it takes to reach them (Google). */
+  nearby_places?: { name: string; travel?: string }[];
+  /** Conditions guests must know, e.g. ID or marriage certificate required. */
+  important_info?: string[];
+  /** Amenities the source says the property does not have. */
+  excluded_amenities?: string[];
+  /** Badges the source shows, e.g. "Travellers' Choice". */
+  labels?: string[];
+}
+
 /** A hotel as one source describes it. Merging across sources happens later. */
 export interface HotelCandidate {
   source: string;
@@ -51,6 +80,8 @@ export interface HotelCandidate {
   check_out_time?: string | null;
   /** The source's usual nightly price range for the property, independent of these dates. */
   typical_price?: { min: number; max: number; currency: string } | null;
+  /** Further details, kept for get_hotel_details (search results leave them out). */
+  details?: HotelDetails;
 }
 
 export interface HotelSearchQuery extends LatLng {

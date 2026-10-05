@@ -30,6 +30,59 @@ export const OfferOut = z.object({
   url: z.string().nullable().describe("Link to the offer at the source, when given."),
 });
 
+/** Everything else a source says about the hotel (get_hotel_details only). */
+export const DetailsOut = z
+  .object({
+    description: z.string().optional().describe("The source's description of the property."),
+    address: z.string().optional().describe("Street address."),
+    phone: z.string().optional().describe("Phone number."),
+    website: z.string().optional().describe("The property's own website."),
+    images: z.array(z.string()).optional().describe("A few photo URLs."),
+    distance_to_centre: z
+      .string()
+      .optional()
+      .describe('Distance to the city centre as the source words it, e.g. "6.0 km to City centre".'),
+    location_rating: z.number().optional().describe("Location score on a 0–5 scale (Google)."),
+    category_scores: z
+      .array(
+        z.object({
+          name: z.string().describe("Category, e.g. Cleanliness."),
+          score: z.number().describe("Score on the source's own scale."),
+        }),
+      )
+      .optional()
+      .describe("Review scores by category."),
+    pros: z.array(z.string()).optional().describe("What reviews praise, in the source's words."),
+    cons: z.array(z.string()).optional().describe("What reviews criticise, in the source's words."),
+    review_topics: z
+      .array(
+        z.object({
+          name: z.string().describe("Topic, e.g. Location or Public transit."),
+          mentions: z.number().describe("How many reviews mention it."),
+          positive: z.number().optional().describe("How many of those are positive."),
+          negative: z.number().optional().describe("How many of those are negative."),
+        }),
+      )
+      .optional()
+      .describe("Review topics with how often and how they are mentioned."),
+    nearby_places: z
+      .array(
+        z.object({
+          name: z.string().describe("Place."),
+          travel: z.string().optional().describe('How to get there, e.g. "Walking 1 min".'),
+        }),
+      )
+      .optional()
+      .describe("Nearby places the source lists."),
+    important_info: z.array(z.string()).optional().describe("Conditions guests must know, e.g. ID required."),
+    excluded_amenities: z
+      .array(z.string())
+      .optional()
+      .describe("Amenities the source says the property does not have."),
+    labels: z.array(z.string()).optional().describe("Badges the source shows."),
+  })
+  .describe("Further details from this source; get_hotel_details only.");
+
 /**
  * One source's own listing of a hotel: its name, rating, details, link and offers. A source that lists the hotel
  * twice gets one section (the first listing's details, both listings' offers).
@@ -65,6 +118,7 @@ export const SourceOut = z.object({
     .optional()
     .describe("The source's usual nightly price range for the property, independent of these dates."),
   url: z.string().nullable().describe("The hotel's page at this source, when given."),
+  details: DetailsOut.optional(),
   cheapest_inr: z
     .number()
     .nullable()
@@ -101,7 +155,7 @@ const offerOut = (p: PriceQuote): z.infer<typeof OfferOut> => ({
 export function sourcesOut(
   hotel: { name: string; hotel_id: string; also_ids: string[]; listings: HotelCandidate[] },
   prices: PriceQuote[],
-  opts: { maxOffers?: number; maxAmenities?: number } = {},
+  opts: { maxOffers?: number; maxAmenities?: number; details?: boolean } = {},
 ): SourceOutT[] {
   const ids = [...new Set([...hotel.listings.map((l) => l.source), ...prices.map((p) => p.source)])];
   const sections = ids.map((source): SourceOutT => {
@@ -134,6 +188,9 @@ export function sourcesOut(
       ...(listing?.check_out_time ? { check_out_time: listing.check_out_time } : {}),
       ...(listing?.typical_price ? { typical_price: listing.typical_price } : {}),
       url: listing?.url ?? null,
+      ...(opts.details && listing?.details && Object.keys(listing.details).length
+        ? { details: listing.details }
+        : {}),
       cheapest_inr: own.find((p) => p.per_night_inr !== null && p.available !== false)?.per_night_inr ?? null,
       offers: offers.map(offerOut),
       offers_total: own.length,

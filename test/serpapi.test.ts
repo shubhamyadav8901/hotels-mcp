@@ -270,3 +270,147 @@ describe("serpapi guest-rating filter", () => {
     expect(new URL(urls[0]!).searchParams.has("rating")).toBe(false);
   });
 });
+
+describe("serpapi listing details", () => {
+  it("keeps description, ≤5 photos, location score, review topics, nearby places and missing amenities", async () => {
+    const body = fixture() as { properties: Record<string, unknown>[] };
+    const [first, ...rest] = body.properties;
+    const page = (fixtureJson("serpapi-google-hotel-details.json") ?? {}) as Record<string, unknown>;
+    const listed = {
+      ...first,
+      description: " A synthetic listing. ",
+      images: page.images,
+      location_rating: 4.6,
+      reviews_breakdown: page.reviews_breakdown,
+      nearby_places: page.nearby_places,
+      excluded_amenities: ["Pool"],
+    };
+    const { serp } = make({ ...body, properties: [listed, ...rest] });
+    const hotels = await serp.search(query);
+    const hotel = hotels.find((h) => h.name === first!.name);
+    expect(hotel?.details).toEqual({
+      description: "A synthetic listing.",
+      images: [
+        "https://example.invalid/o1.jpg",
+        "https://example.invalid/t2.jpg",
+        "https://example.invalid/o3.jpg",
+        "https://example.invalid/o4.jpg",
+        "https://example.invalid/o5.jpg",
+      ],
+      location_rating: 4.6,
+      review_topics: [
+        { name: "Public transit", mentions: 40, positive: 30, negative: 4 },
+        { name: "Service", mentions: 25, positive: 20, negative: 5 },
+      ],
+      nearby_places: [{ name: "Testpur Junction", travel: "Walking 4 min" }, { name: "Fixture Fort" }],
+      excluded_amenities: ["Pool"],
+    });
+    // A listing without any of these has no details at all.
+    for (const h of hotels.filter((x) => x.name !== first!.name)) expect(h).not.toHaveProperty("details");
+  });
+});
+
+describe("serpapi hotel details", () => {
+  const detailsQuery = { check_in: "2026-11-10", check_out: "2026-11-11", adults: 2, children_ages: [0, 9] };
+
+  it("asks Google for the hotel's page by property_token, as one search against the quota", async () => {
+    const { serp, urls } = make(fixtureJson("serpapi-google-hotel-details.json"));
+    await serp.details("FIXTURE_TOKEN_1", { ...detailsQuery, hotel_name: "Fixture Grand Testpur" });
+    expect(urls).toHaveLength(1);
+    const params = new URL(urls[0]!).searchParams;
+    expect(Object.fromEntries(params)).toMatchObject({
+      engine: "google_hotels",
+      property_token: "FIXTURE_TOKEN_1",
+      q: "Fixture Grand Testpur",
+      gl: "in",
+      hl: "en",
+      currency: "INR",
+      check_in_date: "2026-11-10",
+      check_out_date: "2026-11-11",
+      adults: "2",
+      children: "2",
+      children_ages: "1,9",
+    });
+    expect(serp.quotaRemaining()).toBe(249);
+  });
+
+  it("serves a repeat from the 24 h cache without spending another search", async () => {
+    const { serp, urls, setTime } = make(fixtureJson("serpapi-google-hotel-details.json"));
+    await serp.details("FIXTURE_TOKEN_1", detailsQuery);
+    await serp.details("FIXTURE_TOKEN_1", { ...detailsQuery, hotel_name: "Other wording" });
+    expect(urls).toHaveLength(1);
+    expect(serp.quotaRemaining()).toBe(249);
+    await serp.details("FIXTURE_TOKEN_1", { ...detailsQuery, adults: 3 });
+    expect(urls).toHaveLength(2);
+    setTime("2026-10-06T10:00:01Z");
+    await serp.details("FIXTURE_TOKEN_1", detailsQuery);
+    expect(urls).toHaveLength(3);
+    expect(serp.quotaRemaining()).toBe(247);
+  });
+
+  it("maps address, phone, website and the rest, plus one price per named booking site", async () => {
+    const { serp } = make(fixtureJson("serpapi-google-hotel-details.json"));
+    const { details, prices } = await serp.details("FIXTURE_TOKEN_1", detailsQuery);
+    expect(details).toMatchObject({
+      address: "1 Fixture Road, Testpur 000001",
+      phone: "+91 00000 00000",
+      website: "https://example.invalid/fixture-grand",
+      description: "Synthetic hotel a short walk from Testpur Junction.",
+      location_rating: 4.6,
+      excluded_amenities: ["Pool", "Spa"],
+      nearby_places: [{ name: "Testpur Junction", travel: "Walking 4 min" }, { name: "Fixture Fort" }],
+    });
+    expect(details.images).toHaveLength(5);
+    expect(prices).toEqual([
+      {
+        source: "serpapi",
+        seller: "Fixture Bookings",
+        per_night: 2100,
+        total: 2100,
+        currency: "INR",
+        per_night_inr: 2100,
+        includes_taxes: true,
+        available: null,
+        refundable: null,
+        url: "https://example.invalid/fb",
+        // The featured room offered by the same site at exactly this price.
+        room: "Standard Double Room",
+        fetched_at: "2026-10-05T10:00:00.000Z",
+      },
+      expect.objectContaining({ seller: "Sample Travel", per_night: 2250, includes_taxes: null, room: null }),
+    ]);
+  });
+
+  it("falls back to featured offers, then the lowest rate, and leaves unstated parts out", async () => {
+    const page = fixtureJson("serpapi-google-hotel-details.json") as Record<string, unknown>;
+    const { serp } = make({ ...page, prices: [] });
+    const featured = await serp.details("T1", detailsQuery);
+    expect(featured.prices).toEqual([
+      expect.objectContaining({ seller: "Fixture Bookings", per_night: 2100, room: "Standard Double Room" }),
+    ]);
+
+    const bare = make({
+      search_metadata: { status: "Success" },
+      rate_per_night: { extracted_lowest: 1800 },
+      total_rate: { extracted_lowest: 1800 },
+    });
+    const result = await bare.serp.details("T2", detailsQuery);
+    expect(result.details).toEqual({});
+    expect(result.prices).toEqual([
+      expect.objectContaining({ seller: "Google Hotels (lowest listed)", per_night: 1800 }),
+    ]);
+  });
+
+  it("returns empty details for Google's 'no results' and fails on other in-band errors", async () => {
+    const empty = make({ error: "Google Hotels hasn't returned any results for this query." });
+    expect(await empty.serp.details("T", detailsQuery)).toEqual({ details: {}, prices: [] });
+    const broken = make({ error: "Invalid property_token." });
+    await expect(broken.serp.details("T", detailsQuery)).rejects.toMatchObject({
+      code: "UPSTREAM_UNAVAILABLE",
+    });
+  });
+});
+
+function fixtureJson(name: string): unknown {
+  return JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"));
+}

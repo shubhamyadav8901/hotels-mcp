@@ -50,7 +50,7 @@ const provider = (id: string, search: HotelSearchProvider["search"]): HotelSearc
 });
 const stay = { check_in: "2026-11-10", check_out: "2026-11-11", adults: 4 };
 
-describe("get_hotel_rates regressions", () => {
+describe("get_hotel_details regressions", () => {
   it("uses the search's prices when the re-check finds only a similar-named unpriced listing nearby", async () => {
     let tvCalls = 0;
     const tv = provider("trivago", async () =>
@@ -87,7 +87,7 @@ describe("get_hotel_rates regressions", () => {
     const s = await c.callTool({ name: "search_hotels", arguments: { lat: 9.969, lng: 76.291, ...stay } });
     const id = (s.structuredContent as { hotels: { hotel_id: string }[] }).hotels[0]!.hotel_id;
     expect(id).toBe("trivago:tv1");
-    const r = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...stay } });
+    const r = await c.callTool({ name: "get_hotel_details", arguments: { hotel_id: id, ...stay } });
     expect(r.isError).toBeFalsy();
     const out = r.structuredContent as {
       prices: { source: string; per_night_inr: number }[];
@@ -145,7 +145,7 @@ describe("get_hotel_rates regressions", () => {
     const s = await c.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...stay } });
     const id = (s.structuredContent as { hotels: { hotel_id: string }[] }).hotels[0]!.hotel_id;
     expect(id).toBe("trivago:tv1");
-    const r = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...stay } });
+    const r = await c.callTool({ name: "get_hotel_details", arguments: { hotel_id: id, ...stay } });
     const out = r.structuredContent as {
       hotel: { hotel_id: string; also_ids: string[]; name: string; rating_10: number; review_count: number };
       notes: string[];
@@ -159,7 +159,7 @@ describe("get_hotel_rates regressions", () => {
     expect(out.hotel.also_ids).toContain("serpapi:g1");
     expect(out.notes.join("\n")).toMatch(/lists this hotel as "Treebo Trip Royal Inn"/);
     // The same id keeps resolving to the same hotel.
-    const again = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...stay } });
+    const again = await c.callTool({ name: "get_hotel_details", arguments: { hotel_id: id, ...stay } });
     expect((again.structuredContent as { hotel: { name: string } }).hotel.name).toBe("ROYAL INN");
   });
 
@@ -190,7 +190,7 @@ describe("get_hotel_rates regressions", () => {
     );
     const s = await c.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...stay } });
     const id = (s.structuredContent as { hotels: { hotel_id: string }[] }).hotels[0]!.hotel_id;
-    const r = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...stay } });
+    const r = await c.callTool({ name: "get_hotel_details", arguments: { hotel_id: id, ...stay } });
     expect(r.isError).toBeFalsy();
     const out = r.structuredContent as {
       prices: { currency: string; per_night_inr: number | null }[];

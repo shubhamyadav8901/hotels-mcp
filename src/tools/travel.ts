@@ -94,7 +94,7 @@ export function registerTravelTools(
         "also supplies their cheapest price) or name + lat/lng. Places are lat+lng, station code, IATA code or " +
         "place name. Returns, per hotel, the time and distance to every place, total minutes, the " +
         "cheapest price from the search that found it (with its source, fetch time and dates) and a rank by total " +
-        "minutes. Does not fetch new prices; get_hotel_rates does.",
+        "minutes. Does not fetch new prices; get_hotel_details does.",
       inputSchema: {
         hotels: z.array(HotelRef).min(1).max(10).describe("Hotels to compare."),
         places: z

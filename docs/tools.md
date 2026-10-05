@@ -10,7 +10,7 @@ Every response also carries the same JSON as text, and errors come back as
 - [`get_data_sources`](#get_data_sources) — Data sources and status
 - [`resolve_place`](#resolve_place) — Resolve a place in India
 - [`search_hotels`](#search_hotels) — Search hotels near a place
-- [`get_hotel_rates`](#get_hotel_rates) — Compare a hotel's prices across sites
+- [`get_hotel_details`](#get_hotel_details) — One hotel's prices and details from every source
 - [`travel_times`](#travel_times) — Travel times between places
 - [`compare_hotels`](#compare_hotels) — Compare hotels by travel time
 - [`plan_stays`](#plan_stays) — Plan hotel stays for an itinerary
@@ -115,7 +115,7 @@ Turns a name or code into coordinates, or coordinates into nearby transport poin
 
 **Search hotels near a place**
 
-Finds hotels around a place in India for given dates, with live prices from several sources (trivago, HotelsCasa, Google Hotels via SerpApi, Xotelo/TripAdvisor) merged per hotel. The place is lat+lng, an Indian Railways station code, an airport IATA code, or a place name. Each hotel has its distance, stars, best-supported guest rating and cheapest price in INR, and a section per source with that source's own name, rating, property type, amenities, link and offers (booking site, price, taxes, refundability, room and meals as the source names them). Every source is asked for one room for the party, and each quotes the offer it chooses. With max_drive_minutes, keeps only hotels within that drive time (OpenStreetMap routing with a traffic allowance) and adds drive_minutes. Results are paginated. Every offer per source is in get_hotel_rates; times to other places are in compare_hotels. coverage reports what each source returned and what limited it (sources return limited pages, so the list is not exhaustive). Does not book.
+Finds hotels around a place in India for given dates, with live prices from several sources (trivago, HotelsCasa, Google Hotels via SerpApi, Xotelo/TripAdvisor) merged per hotel. The place is lat+lng, an Indian Railways station code, an airport IATA code, or a place name. Each hotel has its distance, stars, best-supported guest rating and cheapest price in INR, and a section per source with that source's own name, rating, property type, amenities, link and offers (booking site, price, taxes, refundability, room and meals as the source names them). Every source is asked for one room for the party, and each quotes the offer it chooses. With max_drive_minutes, keeps only hotels within that drive time (OpenStreetMap routing with a traffic allowance) and adds drive_minutes. Results are paginated. Every offer per source is in get_hotel_details; times to other places are in compare_hotels. coverage reports what each source returned and what limited it (sources return limited pages, so the list is not exhaustive). Does not book.
 
 ### Input
 
@@ -175,7 +175,7 @@ Finds hotels around a place in India for given dates, with live prices from seve
 | `hotels[].cheapest.source` | string | Source that quoted it; its section in sources has the details. |
 | `hotels[].cheapest.seller` | string \| null | Booking site of the price (null when the source names none). |
 | `hotels[].cheapest.url` | string \| null | Link to the offer, when given. |
-| `hotels[].sources` | object[] | Each source's own listing of this hotel (name, rating, details, link) with its offers, cheapest source first; up to 3 offers per source here (get_hotel_rates lists all). |
+| `hotels[].sources` | object[] | Each source's own listing of this hotel (name, rating, details, link) with its offers, cheapest source first; up to 3 offers per source here (get_hotel_details lists all). |
 | `hotels[].sources[].source` | string | Data source id: trivago, hotelscasa, xotelo, serpapi (Google Hotels) or osm_lodging. |
 | `hotels[].sources[].source_id` | string | The hotel's id at this source; source:source_id is one of the hotel's ids. |
 | `hotels[].sources[].name` | string | Hotel name as this source gives it. |
@@ -192,6 +192,30 @@ Finds hotels around a place in India for given dates, with live prices from seve
 | `hotels[].sources[].typical_price.max` | number | High end of the usual nightly price. |
 | `hotels[].sources[].typical_price.currency` | string | Currency of min and max. |
 | `hotels[].sources[].url` | string \| null | The hotel's page at this source, when given. |
+| `hotels[].sources[].details` | object | Further details from this source; get_hotel_details only. |
+| `hotels[].sources[].details.description` | string | The source's description of the property. |
+| `hotels[].sources[].details.address` | string | Street address. |
+| `hotels[].sources[].details.phone` | string | Phone number. |
+| `hotels[].sources[].details.website` | string | The property's own website. |
+| `hotels[].sources[].details.images` | string[] | A few photo URLs. |
+| `hotels[].sources[].details.distance_to_centre` | string | Distance to the city centre as the source words it, e.g. "6.0 km to City centre". |
+| `hotels[].sources[].details.location_rating` | number | Location score on a 0–5 scale (Google). |
+| `hotels[].sources[].details.category_scores` | object[] | Review scores by category. |
+| `hotels[].sources[].details.category_scores[].name` | string | Category, e.g. Cleanliness. |
+| `hotels[].sources[].details.category_scores[].score` | number | Score on the source's own scale. |
+| `hotels[].sources[].details.pros` | string[] | What reviews praise, in the source's words. |
+| `hotels[].sources[].details.cons` | string[] | What reviews criticise, in the source's words. |
+| `hotels[].sources[].details.review_topics` | object[] | Review topics with how often and how they are mentioned. |
+| `hotels[].sources[].details.review_topics[].name` | string | Topic, e.g. Location or Public transit. |
+| `hotels[].sources[].details.review_topics[].mentions` | number | How many reviews mention it. |
+| `hotels[].sources[].details.review_topics[].positive` | number | How many of those are positive. |
+| `hotels[].sources[].details.review_topics[].negative` | number | How many of those are negative. |
+| `hotels[].sources[].details.nearby_places` | object[] | Nearby places the source lists. |
+| `hotels[].sources[].details.nearby_places[].name` | string | Place. |
+| `hotels[].sources[].details.nearby_places[].travel` | string | How to get there, e.g. "Walking 1 min". |
+| `hotels[].sources[].details.important_info` | string[] | Conditions guests must know, e.g. ID required. |
+| `hotels[].sources[].details.excluded_amenities` | string[] | Amenities the source says the property does not have. |
+| `hotels[].sources[].details.labels` | string[] | Badges the source shows. |
 | `hotels[].sources[].cheapest_inr` | number \| null | Lowest per_night_inr among this source's bookable offers (null if none). |
 | `hotels[].sources[].offers` | object[] | This source's offers for the stay and party, cheapest first. |
 | `hotels[].sources[].offers[].seller` | string \| null | Booking site of the offer, e.g. Agoda (null when the source names none; then it sells the room itself). |
@@ -221,11 +245,11 @@ Finds hotels around a place in India for given dates, with live prices from seve
 | `coverage[].note` | string \| null | What limited the source's results, e.g. pages fetched. |
 | `notes` | string[] | Caveats about the results, sources and attribution. |
 
-## get_hotel_rates
+## get_hotel_details
 
-**Compare a hotel's prices across sites**
+**One hotel's prices and details from every source**
 
-Fetches current prices for one hotel from every source for the given dates, grouped by source: each source's own name, rating, property type, amenities and link, with all its offers (booking site such as Booking.com, Agoda or MakeMyTrip; price in INR and the original currency; taxes; refundability; availability; room and meals as the source names them; link), cheapest first. The hotel is a hotel_id from search_hotels or plan_stays, or a name with lat/lng. Does not book.
+Everything the sources say about one hotel for the given dates, grouped by source: each source's own name, rating, property type, amenities and link; all its offers (booking site such as Booking.com, Agoda or MakeMyTrip; price in INR and the original currency; taxes; refundability; availability; room and meals as the source names them; link), cheapest first; and its details (description, address, phone, website, photos, distance to the centre, location rating, review scores, pros and cons, review topics, nearby places, important info such as ID rules, amenities it lacks, badges). HotelsCasa's hotel page is fetched for every call; google_prices also fetches Google's page (1 SerpApi search from a monthly quota). The hotel is a hotel_id from search_hotels or plan_stays, or a name with lat/lng. Does not book.
 
 ### Input
 
@@ -239,6 +263,7 @@ Fetches current prices for one hotel from every source for the given dates, grou
 | `check_out` | string | yes |  | pattern `^\d{4}-\d{2}-\d{2}$` | Check-out date, YYYY-MM-DD. |
 | `adults` | integer |  | `2` | ≥ 1, ≤ 8 | Adults (18+) sharing the one room searched for. |
 | `children_ages` | integer[] |  | `[]` | items ≤ 4, each ≥ 0, ≤ 17 | Ages (0–17) of children sharing that room, one entry per child, e.g. [6, 9]; empty for adults only. |
+| `google_prices` | boolean |  | `false` |  | Also fetch Google's page for the hotel (1 SerpApi search from a monthly quota, when enabled): a price per booking site, address, phone and website. |
 
 ### Output
 
@@ -272,6 +297,30 @@ Fetches current prices for one hotel from every source for the given dates, grou
 | `sources[].typical_price.max` | number | High end of the usual nightly price. |
 | `sources[].typical_price.currency` | string | Currency of min and max. |
 | `sources[].url` | string \| null | The hotel's page at this source, when given. |
+| `sources[].details` | object | Further details from this source; get_hotel_details only. |
+| `sources[].details.description` | string | The source's description of the property. |
+| `sources[].details.address` | string | Street address. |
+| `sources[].details.phone` | string | Phone number. |
+| `sources[].details.website` | string | The property's own website. |
+| `sources[].details.images` | string[] | A few photo URLs. |
+| `sources[].details.distance_to_centre` | string | Distance to the city centre as the source words it, e.g. "6.0 km to City centre". |
+| `sources[].details.location_rating` | number | Location score on a 0–5 scale (Google). |
+| `sources[].details.category_scores` | object[] | Review scores by category. |
+| `sources[].details.category_scores[].name` | string | Category, e.g. Cleanliness. |
+| `sources[].details.category_scores[].score` | number | Score on the source's own scale. |
+| `sources[].details.pros` | string[] | What reviews praise, in the source's words. |
+| `sources[].details.cons` | string[] | What reviews criticise, in the source's words. |
+| `sources[].details.review_topics` | object[] | Review topics with how often and how they are mentioned. |
+| `sources[].details.review_topics[].name` | string | Topic, e.g. Location or Public transit. |
+| `sources[].details.review_topics[].mentions` | number | How many reviews mention it. |
+| `sources[].details.review_topics[].positive` | number | How many of those are positive. |
+| `sources[].details.review_topics[].negative` | number | How many of those are negative. |
+| `sources[].details.nearby_places` | object[] | Nearby places the source lists. |
+| `sources[].details.nearby_places[].name` | string | Place. |
+| `sources[].details.nearby_places[].travel` | string | How to get there, e.g. "Walking 1 min". |
+| `sources[].details.important_info` | string[] | Conditions guests must know, e.g. ID required. |
+| `sources[].details.excluded_amenities` | string[] | Amenities the source says the property does not have. |
+| `sources[].details.labels` | string[] | Badges the source shows. |
 | `sources[].cheapest_inr` | number \| null | Lowest per_night_inr among this source's bookable offers (null if none). |
 | `sources[].offers` | object[] | This source's offers for the stay and party, cheapest first. |
 | `sources[].offers[].seller` | string \| null | Booking site of the offer, e.g. Agoda (null when the source names none; then it sells the room itself). |
@@ -341,7 +390,7 @@ Computes road distance and travel time from each origin to each destination in I
 
 **Compare hotels by travel time**
 
-Compares up to 10 hotels by travel time to a set of labelled places, such as tonight's arrival station, tomorrow's departure airport and attractions. Hotels are hotel_ids from search_hotels (which also supplies their cheapest price) or name + lat/lng. Places are lat+lng, station code, IATA code or place name. Returns, per hotel, the time and distance to every place, total minutes, the cheapest price from the search that found it (with its source, fetch time and dates) and a rank by total minutes. Does not fetch new prices; get_hotel_rates does.
+Compares up to 10 hotels by travel time to a set of labelled places, such as tonight's arrival station, tomorrow's departure airport and attractions. Hotels are hotel_ids from search_hotels (which also supplies their cheapest price) or name + lat/lng. Places are lat+lng, station code, IATA code or place name. Returns, per hotel, the time and distance to every place, total minutes, the cheapest price from the search that found it (with its source, fetch time and dates) and a rank by total minutes. Does not fetch new prices; get_hotel_details does.
 
 ### Input
 

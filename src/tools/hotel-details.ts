@@ -7,6 +7,8 @@ import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/ho
 import { cheapest, isSameHotel, nameSimilarity } from "../core/merge.js";
 import type { HotelCandidate, PriceQuote } from "../core/types.js";
 import { convertToInr } from "../providers/fx.js";
+import type { HotelsCasaProvider } from "../providers/hotelscasa.js";
+import type { SerpApi } from "../providers/serpapi.js";
 import type { TrivagoProvider } from "../providers/trivago.js";
 import type { Xotelo } from "../providers/xotelo.js";
 import { handle, readOnly } from "./common.js";
@@ -16,11 +18,15 @@ import { validateDates } from "./hotels.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
 
-export interface RatesToolDeps {
+export interface HotelDetailsToolDeps {
   hotels: HotelSearchDeps;
   gazetteer: Gazetteer;
   xotelo: Pick<Xotelo, "rates" | "info">;
   trivago: Pick<TrivagoProvider, "lookup" | "info">;
+  /** HotelsCasa's hotel-details tool (free). */
+  hotelscasa: Pick<HotelsCasaProvider, "details" | "info">;
+  /** Google's page for one hotel (1 SerpApi search); null without a key. */
+  serp: Pick<SerpApi, "details" | "info"> | null;
   /** Called when an exchange-rate fetch fails during one request (set per request by the handler). */
   onFxError?: (e: AppError) => void;
   memory: HotelMemory;
@@ -30,17 +36,21 @@ export interface RatesToolDeps {
 // Re-searching this close to the hotel finds it in every source without pulling in the neighbourhood.
 const LOOKUP_RADIUS_KM = 0.4;
 
-export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void {
+export function registerHotelDetailsTool(server: McpServer, deps: HotelDetailsToolDeps): void {
   server.registerTool(
-    "get_hotel_rates",
+    "get_hotel_details",
     {
-      title: "Compare a hotel's prices across sites",
+      title: "One hotel's prices and details from every source",
       description:
-        "Fetches current prices for one hotel from every source for the given dates, grouped by source: each " +
-        "source's own name, rating, property type, amenities and link, with all its offers (booking site such " +
-        "as Booking.com, Agoda or MakeMyTrip; price in INR and the original currency; taxes; refundability; " +
-        "availability; room and meals as the source names them; link), cheapest first. The hotel is a hotel_id " +
-        "from search_hotels or plan_stays, or a name with lat/lng. Does not book.",
+        "Everything the sources say about one hotel for the given dates, grouped by source: each source's " +
+        "own name, rating, property type, amenities and link; all its offers (booking site such as Booking.com, " +
+        "Agoda or MakeMyTrip; price in INR and the original currency; taxes; refundability; availability; room " +
+        "and meals as the source names them; link), cheapest first; and its details (description, address, " +
+        "phone, website, photos, distance to the centre, location rating, review scores, pros and cons, review " +
+        "topics, nearby places, important info such as ID rules, amenities it lacks, badges). HotelsCasa's " +
+        "hotel page is fetched for every call; google_prices also fetches Google's page (1 SerpApi search from " +
+        "a monthly quota). The hotel is a hotel_id from search_hotels or plan_stays, or a name with lat/lng. " +
+        "Does not book.",
       inputSchema: {
         hotel_id: z
           .string()
@@ -52,6 +62,12 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         check_in: isoDate.describe("Check-in date, YYYY-MM-DD (IST)."),
         check_out: isoDate.describe("Check-out date, YYYY-MM-DD."),
         ...occupancyFields,
+        google_prices: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Also fetch Google's page for the hotel (1 SerpApi search from a monthly quota, when enabled): a price per booking site, address, phone and website.",
+          ),
       },
       outputSchema: {
         hotel: z
@@ -107,12 +123,12 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           .describe("Sources or lookups that did not answer, and why."),
         notes: z.array(z.string()).describe("Caveats about the prices."),
       },
-      annotations: readOnly("Compare a hotel's prices across sites"),
+      annotations: readOnly("One hotel's prices and details from every source"),
     },
     handle(async (a) => {
       // Per request: exchange-rate failures in direct lookups are reported, not swallowed.
       const fxErrors: AppError[] = [];
-      const rq: RatesToolDeps = { ...deps, onFxError: (e) => fxErrors.push(e) };
+      const rq: HotelDetailsToolDeps = { ...deps, onFxError: (e) => fxErrors.push(e) };
       validateDates(a.check_in, a.check_out, rq.now());
       validateOccupancy(a.adults, a.children_ages);
       const remembered = a.hotel_id ? rq.memory.get(a.hotel_id) : undefined;
@@ -151,6 +167,19 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           ? settle(trivagoQuotes(rq, tvId, target.name, partyQ, (l) => lookupListings.push(l)))
           : undefined;
       const xoParty = xoId && !hadPrice("xotelo") ? settle(xoteloQuotes(rq, xoId, partyQ)) : undefined;
+      // HotelsCasa's details tool is free: always ask for the full hotel when its id is known.
+      const hcDetailsFor = (id: string) =>
+        rq.hotels.registry.isEnabled(rq.hotelscasa.info.id)
+          ? settle(
+              rq.hotels.registry.run(
+                rq.hotelscasa.info.id,
+                () => rq.hotelscasa.details(id.slice("hotelscasa:".length), partyQ),
+                rq.hotels.deadlineMs,
+              ),
+            )
+          : undefined;
+      const hcStartId = startIds.find((id) => id.startsWith("hotelscasa:"));
+      const hcDetails = hcStartId ? hcDetailsFor(hcStartId) : undefined;
 
       const r = await searchHotels(
         rq.hotels,
@@ -262,6 +291,61 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           lookupNotes.push(`${source} did not list this hotel for these dates on the live re-check.`);
         }
       }
+      // Full details: HotelsCasa's hotel page, and (when asked) Google's.
+      const hcId =
+        hcStartId ?? [withIds.hotel_id, ...withIds.also_ids].find((x) => x.startsWith("hotelscasa:"));
+      const hcRes = await (hcDetails ?? (hcId ? hcDetailsFor(hcId) : undefined));
+      if (hcRes && "error" in hcRes) {
+        sources_failed.push({ source: "hotelscasa", code: hcRes.error.code, message: hcRes.error.message });
+      } else if (hcRes && hcId && (hcRes.value.listing || Object.keys(hcRes.value.details).length)) {
+        const { details, listing } = hcRes.value;
+        const base = listing ?? withIds.listings.find((l) => l.source === "hotelscasa");
+        lookupListings.push({
+          ...(base ?? emptyListing("hotelscasa", hcId.slice("hotelscasa:".length), target, rq.now())),
+          details,
+        });
+        if (listing?.prices.length && !prices.some((p) => p.source === "hotelscasa")) {
+          prices.push(...(await withInr(rq, listing.prices)));
+        }
+      }
+      if (a.google_prices) {
+        const token = [withIds.hotel_id, ...withIds.also_ids]
+          .find((x) => x.startsWith("serpapi:"))
+          ?.slice("serpapi:".length);
+        const serp = rq.serp;
+        if (!serp || !rq.hotels.registry.isEnabled(serp.info.id)) {
+          lookupNotes.push("google_prices needs SerpApi (SERPAPI_KEY with ENABLE_UNOFFICIAL_SOURCES).");
+        } else if (!token) {
+          lookupNotes.push("Google Hotels does not list this hotel, so its page was not fetched.");
+        } else {
+          const g = await settle(
+            rq.hotels.registry.run(
+              serp.info.id,
+              () => serp.details(token, { ...partyQ, hotel_name: target.name }),
+              rq.hotels.deadlineMs,
+            ),
+          );
+          if ("error" in g) {
+            sources_failed.push({ source: serp.info.id, code: g.error.code, message: g.error.message });
+          } else {
+            const base = withIds.listings.find((l) => l.source === "serpapi");
+            const empty = !Object.keys(g.value.details).length && !g.value.prices.length;
+            if (empty)
+              lookupNotes.push("Google's page for this hotel had no prices or details for these dates.");
+            else
+              lookupListings.push({
+                ...(base ?? emptyListing("serpapi", token, target, rq.now())),
+                details: { ...base?.details, ...g.value.details },
+              });
+            if (g.value.prices.length) {
+              for (let i = prices.length - 1; i >= 0; i--)
+                if (prices[i]!.source === "serpapi") prices.splice(i, 1);
+              prices.push(...(await withInr(rq, g.value.prices)));
+            }
+          }
+        }
+      }
+
       // The live match can be a nearby listing with a similar name and no prices; then the search's own prices
       // for the same stay and party are the better answer.
       let listedWithoutPrice = false;
@@ -297,6 +381,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         // A direct lookup is fresher than the search's listing of the same source, so it comes first.
         { ...identityHotel, listings: [...lookupListings, ...identityHotel.listings] },
         prices,
+        { details: true },
       );
       const inr = prices
         .filter((p) => p.available !== false)
@@ -351,7 +436,7 @@ type Stay = { check_in: string; check_out: string; adults: number; children_ages
 
 /** trivago's prices for one hotel looked up by name and id-checked, in INR; [] if not listed. */
 async function trivagoQuotes(
-  deps: RatesToolDeps,
+  deps: HotelDetailsToolDeps,
   id: string,
   name: string,
   q: Stay,
@@ -369,7 +454,7 @@ async function trivagoQuotes(
 }
 
 /** Xotelo's per-site prices for one hotel by its key, in INR; [] if disabled. */
-async function xoteloQuotes(deps: RatesToolDeps, id: string, q: Stay): Promise<PriceQuote[]> {
+async function xoteloQuotes(deps: HotelDetailsToolDeps, id: string, q: Stay): Promise<PriceQuote[]> {
   if (!deps.hotels.registry.isEnabled(deps.xotelo.info.id)) return [];
   const quotes = await deps.hotels.registry.run(
     deps.xotelo.info.id,
@@ -380,7 +465,7 @@ async function xoteloQuotes(deps: RatesToolDeps, id: string, q: Stay): Promise<P
 }
 
 /** INR conversion (non-INR converted, not dropped) for directly fetched quotes. */
-async function withInr(deps: RatesToolDeps, quotes: PriceQuote[]): Promise<PriceQuote[]> {
+async function withInr(deps: HotelDetailsToolDeps, quotes: PriceQuote[]): Promise<PriceQuote[]> {
   // A failed exchange-rate fetch leaves non-INR prices unconverted and is reported through onFxError.
   const fx = quotes.some((p) => p.currency !== "INR")
     ? await deps.hotels.fx.rates().catch((err: unknown) => {
@@ -393,4 +478,26 @@ async function withInr(deps: RatesToolDeps, quotes: PriceQuote[]): Promise<Price
       p.currency === "INR" ? Math.round(p.per_night) : fx ? convertToInr(p.per_night, p.currency, fx) : null;
     return { ...p, per_night_inr: inr };
   });
+}
+
+/** A bare listing for a source whose details were fetched although the re-search did not list the hotel. */
+function emptyListing(
+  source: string,
+  sourceId: string,
+  target: { name: string; lat: number; lng: number },
+  now: Date,
+): HotelCandidate {
+  return {
+    source,
+    source_id: sourceId,
+    name: target.name,
+    lat: target.lat,
+    lng: target.lng,
+    stars: null,
+    rating_10: null,
+    review_count: null,
+    url: null,
+    prices: [],
+    fetched_at: now.toISOString(),
+  };
 }

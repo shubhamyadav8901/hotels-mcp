@@ -8,17 +8,19 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ### Changed
 
-- **Results by source.** Each hotel in `search_hotels` has a `sources` section per source with that source's own name, rating and review count, stars, property type, area, amenities, check-in/out times, usual price range, hotel link and its offers (booking site, price, total, taxes, refundability, availability, room, meals, link), cheapest source first; up to 3 offers per source there, all of them in `get_hotel_rates`, which now groups its offers the same way instead of a flat `prices` list. `cheapest` is a short summary (price, source, booking site, link).
+- **`get_hotel_rates` is now `get_hotel_details`**, the full view of one hotel: every offer from every source, grouped by source, plus each source's details: description, address, phone, website, photos, distance to the centre, location rating, review scores by category, pros and cons, review topics, nearby places with travel times, important info (e.g. ID required), amenities it lacks and badges. HotelsCasa's free hotel-details tool is called for the hotel; `google_prices: true` also fetches Google's page for it (1 SerpApi search) for a price per booking site, address and phone. `search_hotels` stays lean and leaves the details out.
+- **Results by source.** Each hotel in `search_hotels` has a `sources` section per source with that source's own name, rating and review count, stars, property type, area, amenities, check-in/out times, usual price range, hotel link and its offers (booking site, price, total, taxes, refundability, availability, room, meals, link), cheapest source first; up to 3 offers per source there, all of them in `get_hotel_details`, which now groups its offers the same way instead of a flat `prices` list. `cheapest` is a short summary (price, source, booking site, link).
 - **More from each source:** trivago's top amenities and area, HotelsCasa's property type and meals (separate from the room name), Google's property type, amenities and check-in/out times, and Xotelo's property type and usual price range are now kept.
 - **Faster searches for 3+ guests:** trivago and Xotelo are no longer also searched for 2 adults.
 
 ### Removed
 
-- The one-room-for-the-party labels and checks: `fit`, `fit_basis`, `fit_note`, `room_status`, `rank_price`, `get_hotel_rates`' `verify_room` and `room_list`, the 2-adult comparison searches, Google's room lists and `SERPAPI_ROOMS_PER_HOUR`. Sources are still asked for one room for the party; each quotes the offer it chooses.
+- The one-room-for-the-party labels and checks: `fit`, `fit_basis`, `fit_note`, `room_status`, `rank_price`, `get_hotel_details`' `verify_room` and `room_list`, the 2-adult comparison searches, Google's room lists and `SERPAPI_ROOMS_PER_HOUR`. Sources are still asked for one room for the party; each quotes the offer it chooses.
 
 ### Fixed
 
 - **Children with trivago.** trivago accepts children's ages but prices every child as 6 years old (checked live: ages 5 and 9, or 10 and 12, all come back as age 6); the notes now say so whenever children are given, as they already did for Xotelo pricing children as adults.
+- **HotelsCasa errors say why.** Its own error text is passed through (e.g. "KV put() limit exceeded for the day", a daily limit on its side) instead of a generic message.
 - **Google tax flag.** A Google price was marked as including taxes whenever Google gave a pre-tax figure, even when the two were equal; it is now marked only when the pre-tax figure is lower, and unknown otherwise.
 
 ## [0.2.0] - 2026-10-05

@@ -20,16 +20,16 @@ datetimes.
 Full input and output schemas for every tool: [docs/tools.md](docs/tools.md) (generated from the server's
 `tools/list`; `npm run docs:tools` regenerates it and CI fails if it is out of date).
 
-| Tool                  | What it does                                                                                                                                                                                                                                                                              |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `resolve_place`       | Name or code → coordinates (stations, airports, bus stations, landmarks, localities); or coordinates → nearest stations, airports and bus stations                                                                                                                                        |
-| `search_hotels`       | Hotels in or near a place for given dates, merged across sources, with a section per source (its own name, rating, amenities, link and offers) and the cheapest live price in INR for the party (`adults`, `children_ages`); sort by price, rating or distance; optional drive-time limit |
-| `get_hotel_rates`     | One hotel's current offers from every source, grouped by source, each per booking site (Booking.com, Agoda, Trip.com, MakeMyTrip, …), cheapest first, in INR, with tax status, room, meals and links                                                                                      |
-| `compare_hotels`      | Up to 10 hotels × up to 6 labelled places: drive or walk times, totals, ranking                                                                                                                                                                                                           |
-| `travel_times`        | Origin × destination matrix of road km, free-flow and traffic-adjusted minutes                                                                                                                                                                                                            |
-| `plan_stays`          | Per-stop stay planning from arrival/departure times: dates, candidates ranked by price + transfer time, leave-by times, warnings, retiring rooms                                                                                                                                          |
-| `find_retiring_rooms` | IRCTC railway retiring rooms at or near a station, with booking rules and portal link                                                                                                                                                                                                     |
-| `get_data_sources`    | Status, limitations and quotas of every source; bundled dataset dates and licences                                                                                                                                                                                                        |
+| Tool                  | What it does                                                                                                                                                                                                                                                                                         |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolve_place`       | Name or code → coordinates (stations, airports, bus stations, landmarks, localities); or coordinates → nearest stations, airports and bus stations                                                                                                                                                   |
+| `search_hotels`       | Hotels in or near a place for given dates, merged across sources, with a section per source (its own name, rating, amenities, link and offers) and the cheapest live price in INR for the party (`adults`, `children_ages`); sort by price, rating or distance; optional drive-time limit            |
+| `get_hotel_details`   | One hotel in full from every source, grouped by source: all offers per booking site (Booking.com, Agoda, Trip.com, MakeMyTrip, …) in INR with tax status, room, meals and links, plus each source's details (description, address, photos, amenities, review highlights, nearby places, house rules) |
+| `compare_hotels`      | Up to 10 hotels × up to 6 labelled places: drive or walk times, totals, ranking                                                                                                                                                                                                                      |
+| `travel_times`        | Origin × destination matrix of road km, free-flow and traffic-adjusted minutes                                                                                                                                                                                                                       |
+| `plan_stays`          | Per-stop stay planning from arrival/departure times: dates, candidates ranked by price + transfer time, leave-by times, warnings, retiring rooms                                                                                                                                                     |
+| `find_retiring_rooms` | IRCTC railway retiring rooms at or near a station, with booking rules and portal link                                                                                                                                                                                                                |
+| `get_data_sources`    | Status, limitations and quotas of every source; bundled dataset dates and licences                                                                                                                                                                                                                   |
 
 All tools are read-only; nothing books, pays or cancels.
 
@@ -168,8 +168,12 @@ Each hotel comes with a section per source, holding that source's own listing an
 | Xotelo (TripAdvisor)    | a price per booking site (Agoda, Booking.com, Trip.com…) with tax, property type, usual price range (USD) |
 | OpenStreetMap           | location and type only (no prices)                                                                        |
 
-`search_hotels` shows up to 3 offers per source; `get_hotel_rates` shows them all. When trivago's area search leaves
-a hotel out, `get_hotel_rates` asks trivago for it by name (accepted only if trivago returns the same hotel id); if
+`search_hotels` shows up to 3 offers per source; `get_hotel_details` shows them all, with each source's `details`
+(description, address, phone, photos, distance to the centre, location rating, review scores, pros and cons, review
+topics, nearby places, important info, missing amenities, badges). For HotelsCasa it calls its free hotel-details
+tool; with `google_prices: true` it also fetches Google's page for the hotel (1 SerpApi search) for a price per
+booking site, address and phone. When trivago's area search leaves
+a hotel out, `get_hotel_details` asks trivago for it by name (accepted only if trivago returns the same hotel id); if
 the hotel still can't be found live, the prices the search returned for the same stay and party are used.
 
 Beds: no source can filter by bed type. Where the source names the room (HotelsCasa), each price carries it in

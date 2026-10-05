@@ -1,0 +1,72 @@
+{
+  "_fixture": "SYNTHETIC. Shape of SerpApi engine=google_hotels with a property_token (Google's page for one hotel); every value is invented.",
+  "search_metadata": { "status": "Success" },
+  "type": "hotel",
+  "name": "Fixture Grand Testpur",
+  "description": "Synthetic hotel a short walk from Testpur Junction.",
+  "link": "https://example.invalid/fixture-grand",
+  "property_token": "FIXTURE_TOKEN_1",
+  "address": "1 Fixture Road, Testpur 000001",
+  "phone": "+91 00000 00000",
+  "gps_coordinates": { "latitude": 28.6435, "longitude": 77.2175 },
+  "rate_per_night": { "lowest": "₹2,100", "extracted_lowest": 2100 },
+  "total_rate": { "lowest": "₹2,100", "extracted_lowest": 2100 },
+  "featured_prices": [
+    {
+      "source": "Fixture Bookings",
+      "link": "https://example.invalid/fb",
+      "rate_per_night": { "extracted_lowest": 2100 },
+      "rooms": [
+        { "name": "Deluxe Family Room", "rate_per_night": { "extracted_lowest": 2400 } },
+        { "name": "Standard Double Room", "rate_per_night": { "extracted_lowest": 2100 } }
+      ]
+    }
+  ],
+  "prices": [
+    {
+      "source": "Fixture Bookings",
+      "link": "https://example.invalid/fb",
+      "rate_per_night": {
+        "lowest": "₹2,100",
+        "extracted_lowest": 2100,
+        "before_taxes_fees": "₹1,900",
+        "extracted_before_taxes_fees": 1900
+      },
+      "total_rate": { "lowest": "₹2,100", "extracted_lowest": 2100 }
+    },
+    {
+      "source": "Sample Travel",
+      "link": "https://example.invalid/st",
+      "rate_per_night": { "extracted_lowest": 2250, "extracted_before_taxes_fees": 2250 },
+      "total_rate": { "extracted_lowest": 2250 }
+    },
+    { "link": "https://example.invalid/unnamed", "rate_per_night": { "extracted_lowest": 1999 } }
+  ],
+  "images": [
+    { "thumbnail": "https://example.invalid/t1.jpg", "original_image": "https://example.invalid/o1.jpg" },
+    { "thumbnail": "https://example.invalid/t2.jpg" },
+    { "thumbnail": "https://example.invalid/t3.jpg", "original_image": "https://example.invalid/o3.jpg" },
+    { "thumbnail": "https://example.invalid/t4.jpg", "original_image": "https://example.invalid/o4.jpg" },
+    { "thumbnail": "https://example.invalid/t5.jpg", "original_image": "https://example.invalid/o5.jpg" },
+    { "thumbnail": "https://example.invalid/t6.jpg", "original_image": "https://example.invalid/o6.jpg" }
+  ],
+  "overall_rating": 4.1,
+  "reviews": 321,
+  "location_rating": 4.6,
+  "reviews_breakdown": [
+    { "name": "Transit", "description": "Public transit", "total_mentioned": 40, "positive": 30, "negative": 4, "neutral": 6 },
+    { "name": "Service", "total_mentioned": 25, "positive": 20, "negative": 5 }
+  ],
+  "nearby_places": [
+    {
+      "name": "Testpur Junction",
+      "transportations": [
+        { "type": "Walking", "duration": "4 min" },
+        { "type": "Taxi", "duration": "2 min" }
+      ]
+    },
+    { "name": "Fixture Fort" }
+  ],
+  "amenities": ["Free Wi-Fi"],
+  "excluded_amenities": ["Pool", "Spa"]
+}

@@ -28,8 +28,8 @@ const provider = (id: string, search: HotelSearchProvider["search"]): HotelSearc
   search,
 });
 
-describe("get_hotel_rates fallback to search prices", () => {
-  it("get_hotel_rates falls back to the search's prices when the live re-check misses the hotel", async () => {
+describe("get_hotel_details fallback to search prices", () => {
+  it("get_hotel_details falls back to the search's prices when the live re-check misses the hotel", async () => {
     let calls = 0;
     // Lists the hotel only on the first (search) call, like trivago's fixed 25 results around a point.
     const tv = provider(
@@ -68,21 +68,21 @@ describe("get_hotel_rates fallback to search prices", () => {
     const dates = { check_in: "2026-11-10", check_out: "2026-11-11", adults: 4 };
     const s = await c.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...dates } });
     const id = (s.structuredContent as { hotels: { hotel_id: string }[] }).hotels[0]!.hotel_id;
-    const r = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...dates } });
+    const r = await c.callTool({ name: "get_hotel_details", arguments: { hotel_id: id, ...dates } });
     expect(r.isError).toBeFalsy();
     const out = r.structuredContent as { prices: { per_night_inr: number }[]; notes: string[] };
     expect(offers(out)[0]).toMatchObject({ per_night_inr: 3000 });
     expect(out.notes.join(" ")).toMatch(/prices from the search/);
     // A different party or dates does not reuse those prices.
     const other = await c.callTool({
-      name: "get_hotel_rates",
+      name: "get_hotel_details",
       arguments: { hotel_id: id, ...dates, adults: 2 },
     });
     expect(other.isError).toBe(true);
   });
 });
 
-describe("trivago name lookup in get_hotel_rates", () => {
+describe("trivago name lookup in get_hotel_details", () => {
   const listing = (price: number): HotelCandidate => ({
     source: "trivago",
     source_id: "h1",
@@ -126,7 +126,7 @@ describe("trivago name lookup in get_hotel_rates", () => {
     const d = { check_in: "2026-11-10", check_out: "2026-11-11", adults: 4 };
     const s = await c.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...d } });
     const id = (s.structuredContent as { hotels: { hotel_id: string }[] }).hotels[0]!.hotel_id;
-    const r = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...d } });
+    const r = await c.callTool({ name: "get_hotel_details", arguments: { hotel_id: id, ...d } });
     const prices = offers(r.structuredContent);
     expect(prices.filter((p) => p.source === "trivago").map((p) => p.per_night_inr)).toEqual([3300]);
     // The trivago section takes its details from the listing the name lookup found.
@@ -212,7 +212,7 @@ describe("trivago lookup with ids from the original search", () => {
     const s = await c.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...d } });
     const id = (s.structuredContent as { hotels: { hotel_id: string }[] }).hotels[0]!.hotel_id;
     expect(id).toBe("trivago:tv1");
-    const r = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: id, ...d } });
+    const r = await c.callTool({ name: "get_hotel_details", arguments: { hotel_id: id, ...d } });
     const out = r.structuredContent as {
       prices: { source: string; per_night_inr: number }[];
       cheapest_inr: number | null;
@@ -231,7 +231,7 @@ describe("trivago lookup with ids from the original search", () => {
   });
 });
 
-describe("get_hotel_rates timing", () => {
+describe("get_hotel_details timing", () => {
   it("starts the trivago party lookup alongside the re-search, not after it", async () => {
     const events: string[] = [];
     const tvListing = (prices: PriceQuote[]): HotelCandidate => ({
@@ -247,7 +247,7 @@ describe("get_hotel_rates timing", () => {
       fetched_at: T,
       prices,
     });
-    // The search lists the hotel at trivago without a price, so get_hotel_rates starts trivago's party
+    // The search lists the hotel at trivago without a price, so get_hotel_details starts trivago's party
     // lookup before the re-search.
     let first = true;
     const tv = provider(
@@ -291,7 +291,7 @@ describe("get_hotel_rates timing", () => {
     const s = await c.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...d } });
     const hotel = (s.structuredContent as { hotels: { hotel_id: string; also_ids: string[] }[] }).hotels[0]!;
     expect([hotel.hotel_id, ...hotel.also_ids]).toContain("trivago:tv1");
-    const r = await c.callTool({ name: "get_hotel_rates", arguments: { hotel_id: hotel.hotel_id, ...d } });
+    const r = await c.callTool({ name: "get_hotel_details", arguments: { hotel_id: hotel.hotel_id, ...d } });
     const end = events.indexOf("re-search end");
     const party = events.indexOf("lookup 4");
     expect(end).toBeGreaterThan(0);
