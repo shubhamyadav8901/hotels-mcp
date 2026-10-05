@@ -13,14 +13,15 @@ import { addDays, istClock, istDate, istIso } from "./time.js";
 import { travelMatrix, type TravelDeps } from "./travel.js";
 
 export interface StayRequest {
-  arrive: Anchor & { label: string; search_name?: string | undefined };
+  arrive: Anchor & { label: string; search_name?: { name: string; area: boolean } | undefined };
   arrive_at: Date;
-  depart: Anchor & { label: string; search_name?: string | undefined };
+  depart: Anchor & { label: string; search_name?: { name: string; area: boolean } | undefined };
   depart_at: Date;
 }
 
 export interface PlanOptions {
   adults: number;
+  children_ages: number[];
   radius_km: number;
   max_price_inr?: number | undefined;
   min_stars?: number | undefined;
@@ -141,7 +142,10 @@ export async function planStay(
           check_in: checkIn,
           check_out: checkOut,
           adults: opts.adults,
-          place: c.search_name,
+          children_ages: opts.children_ages,
+          place: c.search_name?.name,
+          place_is_area: c.search_name?.area,
+          prefer: { sort: "price", min_stars: opts.min_stars, max_price_inr: opts.max_price_inr },
         },
         { sort: "price", max_price_inr: opts.max_price_inr, min_stars: opts.min_stars },
       ),
@@ -159,7 +163,12 @@ export async function planStay(
       found.set(h.hotel_id, h);
     }
   }
-  deps.memory.remember([...found.values()], { check_in: checkIn, check_out: checkOut });
+  deps.memory.remember([...found.values()], {
+    check_in: checkIn,
+    check_out: checkOut,
+    adults: opts.adults,
+    children_ages: opts.children_ages,
+  });
   // Route a shortlist rather than every hotel: the cheapest, plus the nearest to the arrival and to the
   // departure point, so a slightly dearer hotel next to the station still gets scored on time + price.
   const all = [...found.values()];

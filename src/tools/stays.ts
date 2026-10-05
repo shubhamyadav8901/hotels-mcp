@@ -14,6 +14,7 @@ import {
 import { istDate, parseIstDateTime } from "../core/time.js";
 import type { TravelDeps } from "../core/travel.js";
 import { handle, readOnly } from "./common.js";
+import { occupancyFields, occupancyNote, validateOccupancy } from "./occupancy.js";
 import { PointInput, pointFields } from "./points.js";
 
 const isoDateTime = z
@@ -76,13 +77,7 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
           .min(1)
           .max(6)
           .describe("One entry per stop, in trip order."),
-        adults: z
-          .number()
-          .int()
-          .min(1)
-          .max(8)
-          .default(2)
-          .describe("Guests in the room; searches are for one room."),
+        ...occupancyFields,
         radius_km: z.number().min(0.5).max(15).default(3).describe("Hotel search radius around each point."),
         max_price_inr: z.number().positive().optional().describe("Maximum nightly price in INR."),
         min_stars: z.number().int().min(1).max(5).optional(),
@@ -133,6 +128,7 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
       annotations: readOnly("Plan hotel stays for an itinerary"),
     },
     handle(async (a) => {
+      validateOccupancy(a.adults, a.children_ages);
       const today = istDate(deps.now());
       const requests: StayRequest[] = [];
       for (const [i, s] of a.stays.entries()) {
@@ -162,6 +158,7 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
 
       const opts = {
         adults: a.adults,
+        children_ages: a.children_ages,
         radius_km: a.radius_km,
         max_price_inr: a.max_price_inr,
         min_stars: a.min_stars,
@@ -184,6 +181,7 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
         notes: [
           `Leave-by times allow ${deps.trainBufferMin} min before trains and ${deps.flightBufferMin} min before flights, plus traffic-adjusted drive time.`,
           "Prices are the cheapest live meta-search price per night and may exclude GST. Drive times use OpenStreetMap routing without live traffic.",
+          occupancyNote(a.adults, a.children_ages),
           "Map and station data © OpenStreetMap contributors (ODbL).",
         ],
       };

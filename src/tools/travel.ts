@@ -101,9 +101,13 @@ export function registerTravelTools(
                 fetched_at: z.string(),
                 check_in: z.string(),
                 check_out: z.string(),
+                adults: z.number(),
+                children_ages: z.array(z.number()),
               })
               .nullable()
-              .describe("Cheapest price from the search that returned this hotel, for that search's dates."),
+              .describe(
+                "Cheapest price from the search that returned this hotel, for that search's dates and party.",
+              ),
             total_minutes: z.number().nullable(),
             legs: z.array(LegOut),
           }),
@@ -131,6 +135,8 @@ export function registerTravelTools(
                 fetched_at: p.fetched_at,
                 check_in: known.check_in,
                 check_out: known.check_out,
+                adults: known.adults,
+                children_ages: known.children_ages,
               },
             };
           }

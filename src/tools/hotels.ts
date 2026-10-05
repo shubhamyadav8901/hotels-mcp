@@ -7,6 +7,7 @@ import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/ho
 import { travelMatrix, type TravelDeps } from "../core/travel.js";
 import type { PriceQuote } from "../core/types.js";
 import { handle, readOnly } from "./common.js";
+import { occupancyFields, occupancyNote, validateOccupancy } from "./occupancy.js";
 import { AnchorOut, pointFields } from "./points.js";
 
 /** Free-flow expressway speed, used only to decide how far to search for a drive-time limit. */
@@ -49,6 +50,7 @@ const outputSchema = {
     check_in: z.string(),
     check_out: z.string(),
     adults: z.number(),
+    children_ages: z.array(z.number()),
   }),
   showing: z.string(),
   total: z.number(),
@@ -111,13 +113,7 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         radius_km: z.number().min(0.2).max(25).default(3).describe("Search radius in km."),
         check_in: isoDate.describe("Check-in date, YYYY-MM-DD (IST)."),
         check_out: isoDate.describe("Check-out date, YYYY-MM-DD, after check_in."),
-        adults: z
-          .number()
-          .int()
-          .min(1)
-          .max(8)
-          .default(2)
-          .describe("Guests in the room; searches are for one room."),
+        ...occupancyFields,
         max_price_inr: z
           .number()
           .positive()
@@ -149,10 +145,12 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
     },
     handle(async (a) => {
       validateDates(a.check_in, a.check_out, deps.now());
+      validateOccupancy(a.adults, a.children_ages);
       if (a.sort === "drive_time" && a.max_drive_minutes === undefined) {
         throw new AppError("INVALID_INPUT", "sort=drive_time needs max_drive_minutes.");
       }
       const anchor = await deps.gazetteer.resolvePoint(a);
+      const placeName = searchPlaceName(anchor, deps.gazetteer);
       // A drive-time limit can reach further than the straight-line radius. Widen the search to the distance
       // a car covers at expressway speed (~90 km/h free-flow) in that time, capped at 25 km.
       const radius =
@@ -166,7 +164,14 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         check_in: a.check_in,
         check_out: a.check_out,
         adults: a.adults,
-        place: searchPlaceName(anchor, deps.gazetteer),
+        children_ages: a.children_ages,
+        place: placeName?.name,
+        place_is_area: placeName?.area,
+        prefer: {
+          sort: a.sort === "drive_time" ? ("distance" as const) : a.sort,
+          min_stars: a.min_stars,
+          max_price_inr: a.max_price_inr,
+        },
       };
       const r = await searchHotels(deps, query, {
         sort: a.sort === "drive_time" ? "distance" : a.sort,
@@ -177,6 +182,7 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
       const notes = [
         "distance_km is straight-line distance from the place.",
         "Prices are per night as listed by each source; meta-search prices may exclude GST (includes_taxes=null means unknown).",
+        occupancyNote(a.adults, a.children_ages),
       ];
 
       const priceSourcesOk = r.sources_ok.some((id) => id !== "osm_lodging");
@@ -202,7 +208,12 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
           );
         }
       }
-      deps.memory.remember(hotels, { check_in: a.check_in, check_out: a.check_out });
+      deps.memory.remember(hotels, {
+        check_in: a.check_in,
+        check_out: a.check_out,
+        adults: a.adults,
+        children_ages: a.children_ages,
+      });
       if (r.sources_ok.includes("osm_lodging")) {
         notes.push("Some locations © OpenStreetMap contributors (ODbL).");
       }
@@ -250,6 +261,7 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
           check_in: a.check_in,
           check_out: a.check_out,
           adults: a.adults,
+          children_ages: a.children_ages,
         },
         showing:
           page.length === 0

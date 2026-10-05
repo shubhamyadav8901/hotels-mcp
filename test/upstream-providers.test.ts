@@ -136,3 +136,34 @@ describe("HotelsCasa indicative prices", () => {
     expect(hotels.every((h) => h.prices.length === 0)).toBe(true);
   });
 });
+
+describe("occupancy and preferences sent upstream", () => {
+  it("trivago gets children with dash-separated ages and a star filter", async () => {
+    const call = vi.fn().mockResolvedValue(fixture("trivago-radius-search.json"));
+    await createTrivagoProvider(call, NOW).search({
+      ...query,
+      children_ages: [4, 9],
+      prefer: { min_stars: 4 },
+    });
+    expect(call.mock.calls[0]?.[1]).toMatchObject({
+      adults: 2,
+      rooms: 1,
+      children: 2,
+      children_ages: "4-9",
+      hotel_rating: { "4star": true, "5star": true },
+    });
+  });
+
+  it("HotelsCasa gets the occupancy, sort by price and minimum stars", async () => {
+    const call = vi.fn().mockResolvedValue(fixture("hotelscasa-search.json"));
+    await createHotelsCasaProvider(call, { now: NOW }).search({
+      ...query,
+      adults: 4,
+      children_ages: [],
+      prefer: { sort: "price", min_stars: 3 },
+    });
+    const args = call.mock.calls[0]?.[1];
+    expect(args).toMatchObject({ adults: 4, sort: "price", stars_min: 3 });
+    expect(args).not.toHaveProperty("children");
+  });
+});

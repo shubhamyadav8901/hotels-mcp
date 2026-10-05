@@ -279,3 +279,18 @@ describe("xotelo provider", () => {
     expect(empty.urls).toHaveLength(2);
   });
 });
+
+describe("xotelo occupancy", () => {
+  it("prices children as extra adults (Xotelo returns nothing for age_of_children)", async () => {
+    const { xotelo, urls } = make();
+    await xotelo.rates("g1-d2", "2026-11-10", "2026-11-11", 2, [4, 9]);
+    await xotelo.rates("g1-d2", "2026-11-10", "2026-11-11", 2);
+    // Same room occupancy as the family: served from cache.
+    await xotelo.rates("g1-d2", "2026-11-10", "2026-11-11", 4);
+    const calls = urls.filter((u) => u.includes("/api/rates")).map((u) => new URL(u).searchParams);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.get("adults")).toBe("4");
+    expect(calls[0]!.has("age_of_children")).toBe(false);
+    expect(calls[1]!.get("adults")).toBe("2");
+  });
+});

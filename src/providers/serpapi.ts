@@ -81,9 +81,12 @@ export interface SerpApiOptions {
 /** Builds the Google Hotels request URL (exported for tests). */
 export function serpApiUrl(q: HotelSearchQuery, apiKey: string, baseUrl = SERPAPI_URL): string {
   const url = new URL(baseUrl);
+  const ages = q.children_ages ?? [];
   const params: Record<string, string> = {
     engine: "google_hotels",
-    q: q.hotel_name ? [q.hotel_name, q.place].filter(Boolean).join(", ") : `hotels near ${q.place}`,
+    q: q.hotel_name
+      ? [q.hotel_name, q.place].filter(Boolean).join(", ")
+      : `hotels ${q.place_is_area ? "in" : "near"} ${q.place}`,
     gl: "in",
     hl: "en",
     currency: "INR",
@@ -92,6 +95,19 @@ export function serpApiUrl(q: HotelSearchQuery, apiKey: string, baseUrl = SERPAP
     adults: String(q.adults),
     api_key: apiKey,
   };
+  if (ages.length) {
+    params.children = String(ages.length);
+    // Google Hotels takes ages 1–17; an infant is sent as 1.
+    params.children_ages = ages.map((a) => Math.max(1, a)).join(",");
+  }
+  // Google returns one page of ~20; ask it for the right page rather than re-sorting its top 20.
+  if (!q.hotel_name && q.prefer?.sort === "price") params.sort_by = "3";
+  if (!q.hotel_name && q.prefer?.sort === "rating") params.sort_by = "8";
+  // Google's star filter starts at 2; a minimum of 1 means "no filter" there.
+  if (!q.hotel_name && q.prefer?.min_stars && q.prefer.min_stars > 1) {
+    params.hotel_class = [2, 3, 4, 5].filter((n) => n >= q.prefer!.min_stars!).join(",");
+  }
+  if (!q.hotel_name && q.prefer?.max_price_inr) params.max_price = String(Math.floor(q.prefer.max_price_inr));
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return url.toString();
 }
@@ -113,7 +129,8 @@ export function createSerpApi(opts: SerpApiOptions) {
   }
 
   async function fetchProps(q: HotelSearchQuery): Promise<{ props: Prop[]; fetchedAt: string }> {
-    const key = `${q.hotel_name ?? ""}|${q.place}@${q.lat.toFixed(3)},${q.lng.toFixed(3)}:${q.check_in}:${q.check_out}:${q.adults}`;
+    // Everything that changes the request changes the cache key (the URL without the key).
+    const key = serpApiUrl(q, "-");
     return cache.getOrSet(key, CACHE_TTL_MS, async () => {
       if (quotaRemaining() <= 0) {
         throw new AppError(

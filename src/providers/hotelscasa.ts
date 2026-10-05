@@ -64,8 +64,12 @@ export function createHotelsCasaProvider(
           check_in: q.check_in,
           check_out: q.check_out,
           adults: q.adults,
+          ...(q.children_ages?.length
+            ? { children: q.children_ages.length, children_ages: q.children_ages.join(",") }
+            : {}),
+          ...(q.prefer?.min_stars ? { stars_min: q.prefer.min_stars } : {}),
           lang: "en",
-          sort: "recommended",
+          sort: q.prefer?.sort === "price" ? "price" : q.prefer?.sort === "rating" ? "rating" : "recommended",
           limit: PAGE_SIZE,
           page,
         });

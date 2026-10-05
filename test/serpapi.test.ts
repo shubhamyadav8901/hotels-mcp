@@ -169,3 +169,40 @@ describe("serpapi hotel lookups", () => {
     await expect(serp.search(coordsOnly)).rejects.toMatchObject({ code: "NOT_APPLICABLE" });
   });
 });
+
+describe("serpapi family and sort parameters", () => {
+  it("asks Google for one room for the family, cheapest first, with star and price filters", async () => {
+    const { serp, urls } = make();
+    await serp.search({
+      ...query,
+      place: "Jaipur, Rajasthan",
+      place_is_area: true,
+      adults: 2,
+      children_ages: [0, 9],
+      prefer: { sort: "price", min_stars: 3, max_price_inr: 4500.5 },
+    });
+    const p = new URL(urls[0]!).searchParams;
+    expect(p.get("q")).toBe("hotels in Jaipur, Rajasthan");
+    expect(p.get("adults")).toBe("2");
+    expect(p.get("children")).toBe("2");
+    expect(p.get("children_ages")).toBe("1,9");
+    expect(p.get("sort_by")).toBe("3");
+    expect(p.get("hotel_class")).toBe("3,4,5");
+    expect(p.get("max_price")).toBe("4500");
+    expect(p.has("rooms")).toBe(false);
+  });
+
+  it("sends no star filter for a minimum of 1 (Google's classes start at 2)", async () => {
+    const { serp, urls } = make();
+    await serp.search({ ...query, prefer: { min_stars: 1 } });
+    expect(new URL(urls[0]!).searchParams.has("hotel_class")).toBe(false);
+  });
+
+  it("caches per occupancy, so a family search never reuses a couple's prices", async () => {
+    const { serp, urls } = make();
+    await serp.search(query);
+    await serp.search({ ...query, children_ages: [6] });
+    await serp.search({ ...query, adults: 4 });
+    expect(urls).toHaveLength(3);
+  });
+});

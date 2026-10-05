@@ -65,6 +65,14 @@ describe("Gazetteer", () => {
     expect(air.anchors[0]).toMatchObject({ kind: "airport", code: "DEL" });
   });
 
+  it("does not geocode an all-capitals code that matched, but does for a mixed-case name", async () => {
+    const { g, search } = gazetteer();
+    await g.search("DEL");
+    expect(search).not.toHaveBeenCalled();
+    await g.search("Delhi");
+    expect(search).toHaveBeenCalledOnce();
+  });
+
   it("matches exact codes before names", async () => {
     const { g } = gazetteer();
     const r = await g.search("DEL");
@@ -86,6 +94,25 @@ describe("Gazetteer", () => {
     const r = await g.search("Taj Mahal");
     expect(search).toHaveBeenCalledOnce();
     expect(r.anchors[0]).toMatchObject({ kind: "landmark", name: "Taj Mahal", source: "photon" });
+  });
+
+  it("puts a town named exactly as asked ahead of stations that share its name", async () => {
+    const { g } = gazetteer(async () => [
+      {
+        name: "Delhi",
+        context: "Delhi",
+        category: "place",
+        type: "city",
+        lat: 28.65,
+        lng: 77.23,
+        source: "photon",
+      },
+    ]);
+    const r = await g.search("Delhi");
+    expect(r.anchors[0]).toMatchObject({ kind: "locality", name: "Delhi" });
+    // Naming the kind still wins.
+    const st = await g.search("Delhi railway station");
+    expect(st.anchors[0]).toMatchObject({ kind: "station", code: "DLI" });
   });
 
   it("reports geocoder failures instead of hiding them", async () => {
@@ -124,9 +151,15 @@ describe("searchPlaceName", () => {
   const base = { code: null, context: null, source: "t" };
 
   it("names stations, airports and landmarks for text search", () => {
-    expect(searchPlaceName(g.station("NDLS")!, g)).toBe("New Delhi railway station");
-    expect(searchPlaceName(g.station("DLI")!, g)).toBe("Delhi Junction");
-    expect(searchPlaceName(g.airport("DEL")!, g)).toBe("Indira Gandhi International Airport, New Delhi");
+    expect(searchPlaceName(g.station("NDLS")!, g)).toEqual({
+      name: "New Delhi railway station",
+      area: false,
+    });
+    expect(searchPlaceName(g.station("DLI")!, g)).toEqual({ name: "Delhi Junction", area: false });
+    expect(searchPlaceName(g.airport("DEL")!, g)).toEqual({
+      name: "Indira Gandhi International Airport, New Delhi",
+      area: false,
+    });
     expect(
       searchPlaceName(
         {
@@ -139,13 +172,23 @@ describe("searchPlaceName", () => {
         },
         g,
       ),
-    ).toBe("Taj Mahal, Agra, Uttar Pradesh");
+    ).toEqual({ name: "Taj Mahal, Agra, Uttar Pradesh", area: false });
+  });
+
+  it("marks towns and localities as areas", () => {
+    expect(
+      searchPlaceName(
+        { ...base, kind: "locality", name: "Jaipur", context: "Rajasthan", lat: 26.9, lng: 75.8 },
+        g,
+      ),
+    ).toEqual({ name: "Jaipur, Rajasthan", area: true });
   });
 
   it("names coordinates after the nearest station within 3 km, else gives none", () => {
-    expect(searchPlaceName({ ...base, kind: "point", name: "p", lat: 28.643, lng: 77.2194 }, g)).toBe(
-      "New Delhi railway station",
-    );
+    expect(searchPlaceName({ ...base, kind: "point", name: "p", lat: 28.643, lng: 77.2194 }, g)).toEqual({
+      name: "New Delhi railway station",
+      area: false,
+    });
     expect(searchPlaceName({ ...base, kind: "point", name: "p", lat: 20, lng: 80 }, g)).toBeUndefined();
   });
 });
@@ -206,7 +249,7 @@ describe("travel tools over MCP", () => {
           ],
         },
       ],
-      { check_in: "2026-11-10", check_out: "2026-11-11" },
+      { check_in: "2026-11-10", check_out: "2026-11-11", adults: 2, children_ages: [6, 9] },
     );
     return testDeps({
       registry,
@@ -271,6 +314,8 @@ describe("travel tools over MCP", () => {
         fetched_at: "t",
         check_in: "2026-11-10",
         check_out: "2026-11-11",
+        adults: 2,
+        children_ages: [6, 9],
       },
     });
     expect(hotels[1]).toMatchObject({ name: "Other Hotel", rank: 2, cheapest: null });

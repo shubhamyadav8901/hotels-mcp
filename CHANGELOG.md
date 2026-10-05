@@ -4,6 +4,18 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-05
+
+### Added
+
+- **Families in one room.** `search_hotels`, `get_hotel_rates` and `plan_stays` take `children_ages` (up to 4 children, ages 0–17) besides `adults`, at most 8 guests. Every source is asked for one room for that party, so results are rooms that fit everyone. Xotelo returns no prices when children are sent, so it counts them as adults (its prices err high, never low); the response says so.
+- **Cheapest first at the source.** With `sort=price` (or `rating`), Google Hotels and HotelsCasa are asked for their cheapest (or best-rated) results, and minimum stars (and, for Google, the price cap) are applied server-side, so their single page of results is the right page. trivago gets the star filter.
+
+### Changed
+
+- **"Hotels in X" searches the town.** A place query that names a town or city exactly (e.g. `Jaipur`) resolves to the town rather than to its main station, and Google Hotels is asked for "hotels in Jaipur, Rajasthan".
+- **Faster Xotelo.** Its area lists are fetched concurrently (still rate-limited), roughly halving its time on a first search.
+
 ## [0.1.1] - 2026-10-05
 
 ### Changed
@@ -39,6 +51,7 @@ The first public release.
 - **Bundled data:** OpenStreetMap snapshots of ~9.2k railway stations with codes, ~5.3k bus stations and ~24k lodging places (ODbL), 151 Indian airports from OurAirports (public domain), and IRCTC's public retiring-room station list (356 stations). Rebuilt with `npm run build:data`; the IRCTC list only with the manual `--with-irctc` flag.
 - **Packaging and checks:** Dockerfile and docker compose for local use, unit and MCP protocol tests on synthetic fixtures, and a live acceptance smoke test (`npm run smoke`).
 
-[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/shubhamyadav8901/hotels-mcp/releases/tag/v0.1.0

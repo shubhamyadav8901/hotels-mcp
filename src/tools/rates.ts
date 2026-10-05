@@ -9,6 +9,7 @@ import type { PriceQuote } from "../core/types.js";
 import { convertToInr } from "../providers/fx.js";
 import type { Xotelo } from "../providers/xotelo.js";
 import { handle, readOnly } from "./common.js";
+import { occupancyFields, occupancyNote, validateOccupancy } from "./occupancy.js";
 import { validateDates } from "./hotels.js";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD");
@@ -58,13 +59,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         lng: z.number().min(68).max(97.5).optional().describe("Hotel longitude, when not giving hotel_id."),
         check_in: isoDate.describe("Check-in date, YYYY-MM-DD (IST)."),
         check_out: isoDate.describe("Check-out date, YYYY-MM-DD."),
-        adults: z
-          .number()
-          .int()
-          .min(1)
-          .max(8)
-          .default(2)
-          .describe("Guests in the room; searches are for one room."),
+        ...occupancyFields,
       },
       outputSchema: {
         hotel: z.object({
@@ -90,6 +85,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
     },
     handle(async (a) => {
       validateDates(a.check_in, a.check_out, deps.now());
+      validateOccupancy(a.adults, a.children_ages);
       const known = a.hotel_id ? deps.memory.get(a.hotel_id)?.hotel : undefined;
       if (a.hotel_id && !known && (a.lat === undefined || a.lng === undefined || !a.name)) {
         throw new AppError(
@@ -113,6 +109,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           check_in: a.check_in,
           check_out: a.check_out,
           adults: a.adults,
+          children_ages: a.children_ages,
           // Text-only sources look the hotel up by name, with the nearest station for city context.
           hotel_name: target.name,
           place: deps.gazetteer.nearby(target).stations[0]?.name,
@@ -144,7 +141,13 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       if (xoteloId && !prices.some((p) => p.source === "xotelo")) {
         try {
           const quotes = await deps.hotels.registry.run(deps.xotelo.info.id, () =>
-            deps.xotelo.rates(xoteloId.slice("xotelo:".length), a.check_in, a.check_out, a.adults),
+            deps.xotelo.rates(
+              xoteloId.slice("xotelo:".length),
+              a.check_in,
+              a.check_out,
+              a.adults,
+              a.children_ages,
+            ),
           );
           const fx = quotes.some((q) => q.currency !== "INR") ? await deps.hotels.fx.rates() : null;
           for (const q of quotes) {
@@ -181,8 +184,14 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         .sort((x, y) => (x.per_night_inr ?? Infinity) - (y.per_night_inr ?? Infinity));
       const inr = sorted.map((p) => p.per_night_inr).filter((v): v is number => v !== null);
 
-      deps.memory.remember([match], { check_in: a.check_in, check_out: a.check_out });
+      deps.memory.remember([match], {
+        check_in: a.check_in,
+        check_out: a.check_out,
+        adults: a.adults,
+        children_ages: a.children_ages,
+      });
       const notes = [
+        occupancyNote(a.adults, a.children_ages),
         "Meta-search prices can differ at checkout; includes_taxes=null means the source does not say whether GST is included.",
       ];
       if (sorted.length === 0) notes.push("No source has a live price for this hotel on these dates.");

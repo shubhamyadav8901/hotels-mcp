@@ -17,16 +17,16 @@ datetimes.
 
 ## Tools
 
-| Tool                  | What it does                                                                                                                                       |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `resolve_place`       | Name or code → coordinates (stations, airports, bus stations, landmarks, localities); or coordinates → nearest stations, airports and bus stations |
-| `search_hotels`       | Hotels around a place for given dates, merged across sources, cheapest live price in INR for one room (`adults` 1–8); optional drive-time limit    |
-| `get_hotel_rates`     | One hotel's current prices per booking site (Booking.com, Agoda, Trip.com, MakeMyTrip, …), cheapest first, in INR, with tax status and links       |
-| `compare_hotels`      | Up to 10 hotels × up to 6 labelled places: drive or walk times, totals, ranking                                                                    |
-| `travel_times`        | Origin × destination matrix of road km, free-flow and traffic-adjusted minutes                                                                     |
-| `plan_stays`          | Per-stop stay planning from arrival/departure times: dates, candidates ranked by price + transfer time, leave-by times, warnings, retiring rooms   |
-| `find_retiring_rooms` | IRCTC railway retiring rooms at or near a station, with booking rules and portal link                                                              |
-| `get_data_sources`    | Status, limitations and quotas of every source; bundled dataset dates and licences                                                                 |
+| Tool                  | What it does                                                                                                                                                                                                            |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolve_place`       | Name or code → coordinates (stations, airports, bus stations, landmarks, localities); or coordinates → nearest stations, airports and bus stations                                                                      |
+| `search_hotels`       | Hotels in or near a place for given dates, merged across sources, cheapest live price in INR for one room that fits the party (`adults`, `children_ages`); sort by price, rating or distance; optional drive-time limit |
+| `get_hotel_rates`     | One hotel's current prices per booking site (Booking.com, Agoda, Trip.com, MakeMyTrip, …), cheapest first, in INR, with tax status and links                                                                            |
+| `compare_hotels`      | Up to 10 hotels × up to 6 labelled places: drive or walk times, totals, ranking                                                                                                                                         |
+| `travel_times`        | Origin × destination matrix of road km, free-flow and traffic-adjusted minutes                                                                                                                                          |
+| `plan_stays`          | Per-stop stay planning from arrival/departure times: dates, candidates ranked by price + transfer time, leave-by times, warnings, retiring rooms                                                                        |
+| `find_retiring_rooms` | IRCTC railway retiring rooms at or near a station, with booking rules and portal link                                                                                                                                   |
+| `get_data_sources`    | Status, limitations and quotas of every source; bundled dataset dates and licences                                                                                                                                      |
 
 All tools are read-only; nothing books, pays or cancels.
 
@@ -134,7 +134,26 @@ image) and `ALLOWED_HOSTS` (comma-separated extra hostnames accepted in the `Hos
 `localhost`, `127.0.0.1` and `[::1]` are always accepted). Under docker compose, `PORT` and `HOST` are fixed by
 `docker-compose.yml`.
 
-Searches are for one room; `adults` is the number of guests in that room (1–8).
+Searches are for **one room that fits the whole party**: `adults` (1–8) plus `children_ages` (up to 4 children,
+ages 0–17), at most 8 guests. Every source is asked for that occupancy, so a family of four sees only rooms (and
+prices) for four. Xotelo cannot price children, so it counts them as adults. With `sort=price`, Google Hotels and
+HotelsCasa return their cheapest results rather than their most relevant ones. `min_stars` (and, for Google,
+`max_price_inr`) is also applied by those sources on their own price basis, before results are merged. A town or city name (`place:
+"Jaipur"`) searches the town, not its main station.
+
+Example: the cheapest rooms in Jaipur for two adults and two children:
+
+```json
+{
+  "place": "Jaipur",
+  "radius_km": 6,
+  "check_in": "2026-11-10",
+  "check_out": "2026-11-11",
+  "adults": 2,
+  "children_ages": [6, 9],
+  "sort": "price"
+}
+```
 
 ## Development
 

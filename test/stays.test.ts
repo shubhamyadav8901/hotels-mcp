@@ -222,6 +222,7 @@ describe("planStay", () => {
   }
   const opts: PlanOptions = {
     adults: 2,
+    children_ages: [],
     radius_km: 3,
     candidates: 3,
     value_of_time_inr_per_hour: 300,

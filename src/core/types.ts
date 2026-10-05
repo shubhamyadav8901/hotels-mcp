@@ -42,13 +42,22 @@ export interface HotelSearchQuery extends LatLng {
   radius_km: number;
   check_in: string;
   check_out: string;
-  /** Guests in the single room searched for; every source is asked for one room. */
+  /** Adults in the single room searched for; every source is asked for one room. */
   adults: number;
+  /** Ages (0–17) of children sharing that room, one entry per child. */
+  children_ages?: number[] | undefined;
   /**
    * Readable name of the search point (e.g. "New Delhi railway station, Delhi"), for sources that search by
    * text only. Google Hotels ignores coordinates in a query, so without a name it cannot search near a point.
    */
   place?: string | undefined;
+  /** `place` is a town or area ("hotels in X") rather than a point of interest ("hotels near X"). */
+  place_is_area?: boolean | undefined;
+  /**
+   * What the caller will sort and filter by. Sources that support it apply it server-side, so their single
+   * page of results is the right page (e.g. Google's cheapest 20 rather than its top 20 by relevance).
+   */
+  prefer?: { sort?: "distance" | "price" | "rating"; min_stars?: number; max_price_inr?: number } | undefined;
   /** Set when looking up one known hotel: text-only sources then search for this name near `place`. */
   hotel_name?: string | undefined;
 }

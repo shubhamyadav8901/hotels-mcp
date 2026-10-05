@@ -59,6 +59,16 @@ export function createTrivagoProvider(
         departure: q.check_out,
         adults: q.adults,
         rooms: 1,
+        ...(q.children_ages?.length
+          ? { children: q.children_ages.length, children_ages: q.children_ages.join("-") }
+          : {}),
+        ...(q.prefer?.min_stars
+          ? {
+              hotel_rating: Object.fromEntries(
+                [1, 2, 3, 4, 5].filter((n) => n >= q.prefer!.min_stars!).map((n) => [`${n}star`, true]),
+              ),
+            }
+          : {}),
         country: "IN",
         currency: "INR",
         language: "EN_IN",

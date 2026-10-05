@@ -176,6 +176,9 @@ export class Gazetteer {
         if (s) add(s);
       }
     }
+    // An all-capitals query that matched a code ("BLR", "NDLS") is a code, not a town name: no geocoding.
+    // Mixed case ("Puri") may still mean the town.
+    const isCode = out.length > 0 && q === q.toUpperCase();
 
     const qt = tokens(q);
     const hinted: AnchorKind | null = STATION_WORDS.test(q)
@@ -205,9 +208,9 @@ export class Gazetteer {
 
     const geocoder_errors: string[] = [];
     if (
-      out.length < limit &&
-      // Geocode when nothing local matched, or when the query may be a landmark or locality rather than
-      // the station/airport/bus terminal it would otherwise name.
+      // Geocode when nothing local matched, or when the query may be a town, landmark or locality rather
+      // than the station/airport/bus terminal it would otherwise name ("Jaipur" the city, not Jaipur Jn).
+      !isCode &&
       (local.length === 0 ||
         (hinted === null && (!opts.kind || opts.kind === "landmark" || opts.kind === "locality")))
     ) {
@@ -224,6 +227,12 @@ export class Gazetteer {
           geocoder_errors.push(`${g.id}: ${toAppError(err).message}`);
         }
       }
+    }
+    // A town or area named exactly as asked ("Jaipur", "Hampi") is what "hotels in X" means: put it first.
+    if (hinted === null && !opts.kind) {
+      const wanted = tokens(q).join(" ");
+      const i = out.findIndex((a) => a.kind === "locality" && tokens(a.name).join(" ") === wanted);
+      if (i > 0) out.unshift(...out.splice(i, 1));
     }
     return { anchors: out.slice(0, limit), geocoder_errors };
   }
@@ -305,19 +314,25 @@ export class Gazetteer {
  * A readable name for searching near an anchor by text (Google Hotels), or undefined when there is none.
  * Coordinates get the name of the nearest railway station within 3 km.
  */
-export function searchPlaceName(anchor: Anchor, gazetteer: Gazetteer): string | undefined {
+export function searchPlaceName(
+  anchor: Anchor,
+  gazetteer: Gazetteer,
+): { name: string; area: boolean } | undefined {
   const withContext = (name: string) => (anchor.context ? `${name}, ${anchor.context}` : name);
   switch (anchor.kind) {
     case "station":
-      return /\b(station|junction|jn|terminus|central)\b/i.test(anchor.name)
-        ? anchor.name
-        : `${anchor.name} railway station`;
+      return {
+        name: /\b(station|junction|jn|terminus|central)\b/i.test(anchor.name)
+          ? anchor.name
+          : `${anchor.name} railway station`,
+        area: false,
+      };
     case "airport":
-      return withContext(anchor.name);
     case "bus_station":
     case "landmark":
+      return { name: withContext(anchor.name), area: false };
     case "locality":
-      return withContext(anchor.name);
+      return { name: withContext(anchor.name), area: true };
     case "point": {
       const near = gazetteer.nearby(anchor).stations.find((s) => s.distance_km <= 3);
       return near ? searchPlaceName({ ...near, kind: "station" }, gazetteer) : undefined;

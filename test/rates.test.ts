@@ -102,7 +102,7 @@ describe("get_hotel_rates", () => {
       name: "get_hotel_rates",
       arguments: { name: "Sunrise Residency", lat: 28.6435, lng: 77.2175, ...dates },
     });
-    expect(xoteloRates).toHaveBeenCalledWith("g304551-d123", "2026-11-10", "2026-11-11", 2);
+    expect(xoteloRates).toHaveBeenCalledWith("g304551-d123", "2026-11-10", "2026-11-11", 2, []);
     expect((r.structuredContent as Out).prices.map((p) => p.seller)).toEqual(["Trip.com", "Agoda"]);
   });
 

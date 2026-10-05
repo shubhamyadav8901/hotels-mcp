@@ -31,6 +31,7 @@ export const XOTELO_INFO: ProviderInfo = {
     "Prices come from TripAdvisor's OTA comparison (Booking.com, Agoda, Trip.com, Vio) and are likely pre-tax.",
     "No Indian OTAs (MakeMyTrip, Goibibo, OYO) and thin coverage of OYO/FabHotel-type properties.",
     "Searches by TripAdvisor location key, so only the first few hundred hotels of a large city are scanned.",
+    "Cannot price children: they are counted as adults, so a family's room fits everyone but may be priced high.",
   ],
 };
 
@@ -213,15 +214,19 @@ export function createXotelo(opts: XoteloOptions) {
     checkIn: string,
     checkOut: string,
     adults: number,
+    childrenAges: readonly number[] = [],
   ): Promise<RateRow[]> {
-    const cacheKey = `${hotelKey}:${checkIn}:${checkOut}:${adults}`;
+    // Xotelo returns no rates at all when age_of_children is sent (checked live 2026-10-05), so children are
+    // priced as extra adults: the room still has to fit everyone, and the price errs high, never low.
+    const guests = adults + childrenAges.length;
+    const cacheKey = `${hotelKey}:${checkIn}:${checkOut}:${guests}`;
     const hit = ratesCache.get(cacheKey);
     if (hit) return hit;
     const raw = await call("rates", {
       hotel_key: hotelKey,
       chk_in: checkIn,
       chk_out: checkOut,
-      adults,
+      adults: guests,
       rooms: 1,
       currency: "INR",
     });
@@ -263,8 +268,9 @@ export function createXotelo(opts: XoteloOptions) {
     checkIn: string,
     checkOut: string,
     adults = 2,
+    childrenAges: readonly number[] = [],
   ): Promise<PriceQuote[]> {
-    const rows = await fetchRates(hotelKey, checkIn, checkOut, adults);
+    const rows = await fetchRates(hotelKey, checkIn, checkOut, adults, childrenAges);
     return toQuotes(rows, new Date(now()).toISOString());
   }
 
@@ -275,24 +281,33 @@ export function createXotelo(opts: XoteloOptions) {
     // Collect hotels within the radius from each key's first pages, deduped by TripAdvisor hotel id.
     const byId = new Map<string, { item: XoteloListItem; hotelKey: string; km: number }>();
     const errors: AppError[] = [];
-    for (const k of chosen) {
-      try {
-        for (let page = 0; page < maxPagesPerKey; page++) {
-          const res = await listPage(k.key, page * PAGE_SIZE);
-          for (const item of res.list) {
-            if (!item.geo) continue;
-            const km = haversineKm(q, { lat: item.geo.latitude, lng: item.geo.longitude });
-            if (km > q.radius_km) continue;
-            const parsed = parseTripadvisorUrl(item.url);
-            const id = parsed?.id ?? item.key.replace(/^g\d+-/, "");
-            const hotelKey = parsed ? `${parsed.geo}-${parsed.id}` : item.key;
-            if (!byId.has(id)) byId.set(id, { item, hotelKey, km });
+    // Fetch each key's pages concurrently (request starts are still spaced by the throttle), then merge in
+    // key order so de-duplication stays deterministic.
+    const perKey = await Promise.all(
+      chosen.map(async (k) => {
+        const items: XoteloListItem[] = [];
+        try {
+          for (let page = 0; page < maxPagesPerKey; page++) {
+            const res = await listPage(k.key, page * PAGE_SIZE);
+            items.push(...res.list);
+            if (res.list.length < PAGE_SIZE || (page + 1) * PAGE_SIZE >= res.total_count) break;
           }
-          if (res.list.length < PAGE_SIZE || (page + 1) * PAGE_SIZE >= res.total_count) break;
+        } catch (err) {
+          if (!(err instanceof AppError)) throw err;
+          errors.push(err);
         }
-      } catch (err) {
-        if (!(err instanceof AppError)) throw err;
-        errors.push(err);
+        return items;
+      }),
+    );
+    for (const items of perKey) {
+      for (const item of items) {
+        if (!item.geo) continue;
+        const km = haversineKm(q, { lat: item.geo.latitude, lng: item.geo.longitude });
+        if (km > q.radius_km) continue;
+        const parsed = parseTripadvisorUrl(item.url);
+        const id = parsed?.id ?? item.key.replace(/^g\d+-/, "");
+        const hotelKey = parsed ? `${parsed.geo}-${parsed.id}` : item.key;
+        if (!byId.has(id)) byId.set(id, { item, hotelKey, km });
       }
     }
     if (errors.length === chosen.length) throw errors[0]!;
@@ -300,7 +315,7 @@ export function createXotelo(opts: XoteloOptions) {
     const hotels = [...byId.values()].sort((a, b) => a.km - b.km);
     const priced = hotels.slice(0, ratesForNearest);
     const rateResults = await Promise.allSettled(
-      priced.map((h) => fetchRates(h.hotelKey, q.check_in, q.check_out, q.adults)),
+      priced.map((h) => fetchRates(h.hotelKey, q.check_in, q.check_out, q.adults, q.children_ages)),
     );
     const failed = rateResults.filter((r) => r.status === "rejected");
     if (priced.length > 0 && failed.length === priced.length)
