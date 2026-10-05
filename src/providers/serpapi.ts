@@ -52,7 +52,9 @@ const Property = z.object({
   prices: z
     .array(
       z.object({
-        source: z.string(),
+        // Google sometimes lists a price without naming its site (seen live, 2026-10-05); such a price is
+        // skipped rather than failing the whole response.
+        source: z.string().nullish(),
         link: z.string().nullish(),
         rate_per_night: Rate,
         total_rate: Rate,
@@ -70,6 +72,60 @@ const Payload = z.object({
 
 type Prop = z.infer<typeof Property>;
 
+const RoomRate = z.object({
+  num_guests: z.number().nullish(),
+  link: z.string().nullish(),
+  rate_per_night: Rate,
+});
+
+const FeaturedPrice = z.object({
+  source: z.string().nullish(),
+  link: z.string().nullish(),
+  rooms: z
+    .array(
+      z.object({
+        name: z.string().nullish(),
+        num_guests: z.number().nullish(),
+        link: z.string().nullish(),
+        rate_per_night: Rate,
+        rates: z.array(RoomRate).nullish(),
+      }),
+    )
+    .nullish(),
+});
+
+const DetailsPayload = z.object({
+  search_metadata: z.object({ status: z.string().nullish() }).nullish(),
+  error: z.string().nullish(),
+  featured_prices: z.array(FeaturedPrice).nullish(),
+});
+
+/** One room rate a booking site lists on Google's hotel page. */
+export interface GoogleRoomOffer {
+  /** Booking site, e.g. "Booking.com", "Agoda". */
+  seller: string;
+  /** Room name as listed, e.g. "Standard Family Room", "Cheapest combo rooms". */
+  room: string;
+  /** Guests this rate is for, only where the site reports real capacity (Booking.com, Agoda); null otherwise (Expedia-family sites echo the searched party). */
+  guests: number | null;
+  per_night: number;
+  currency: string;
+  url: string | null;
+}
+
+export interface GoogleRoomsQuery {
+  check_in: string;
+  check_out: string;
+  adults: number;
+  children_ages?: number[];
+  /** Free text for Google's q parameter; the property token decides the hotel. */
+  hotel_name?: string;
+}
+
+// Sites whose per-room guest count is the room's capacity. Others (Expedia, Hotels.com, Travelocity, …)
+// repeat the searched party size on every room, so their count says nothing about the room.
+const REPORTS_CAPACITY = /^(booking\.com|agoda)/i;
+
 export interface SerpApiOptions {
   apiKey: string;
   http: HttpOptions;
@@ -84,7 +140,6 @@ export interface SerpApiOptions {
 /** Builds the Google Hotels request URL (exported for tests). */
 export function serpApiUrl(q: HotelSearchQuery, apiKey: string, baseUrl = SERPAPI_URL): string {
   const url = new URL(baseUrl);
-  const ages = q.children_ages ?? [];
   const params: Record<string, string> = {
     engine: "google_hotels",
     q: q.hotel_name
@@ -95,14 +150,9 @@ export function serpApiUrl(q: HotelSearchQuery, apiKey: string, baseUrl = SERPAP
     currency: "INR",
     check_in_date: q.check_in,
     check_out_date: q.check_out,
-    adults: String(q.adults),
+    ...partyParams(q.adults, q.children_ages),
     api_key: apiKey,
   };
-  if (ages.length) {
-    params.children = String(ages.length);
-    // Google Hotels takes ages 1–17; an infant is sent as 1.
-    params.children_ages = ages.map((a) => Math.max(1, a)).join(",");
-  }
   // Google returns one page of ~20; ask it for the right page rather than re-sorting its top 20.
   if (!q.hotel_name && q.prefer?.sort === "price") params.sort_by = "3";
   if (!q.hotel_name && q.prefer?.sort === "rating") params.sort_by = "8";
@@ -113,6 +163,69 @@ export function serpApiUrl(q: HotelSearchQuery, apiKey: string, baseUrl = SERPAP
   if (!q.hotel_name && q.prefer?.max_price_inr) params.max_price = String(Math.floor(q.prefer.max_price_inr));
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return url.toString();
+}
+
+function partyParams(adults: number, childrenAges: number[] = []): Record<string, string> {
+  const params: Record<string, string> = { adults: String(adults) };
+  if (childrenAges.length) {
+    params.children = String(childrenAges.length);
+    // Google Hotels takes ages 1–17; an infant is sent as 1.
+    params.children_ages = childrenAges.map((a) => Math.max(1, a)).join(",");
+  }
+  return params;
+}
+
+/** Builds the Google Hotels property-details request URL (exported for tests). */
+export function serpApiRoomsUrl(
+  propertyToken: string,
+  q: GoogleRoomsQuery,
+  apiKey: string,
+  baseUrl = SERPAPI_URL,
+): string {
+  const url = new URL(baseUrl);
+  const params: Record<string, string> = {
+    engine: "google_hotels",
+    q: q.hotel_name || "hotel",
+    property_token: propertyToken,
+    gl: "in",
+    hl: "en",
+    currency: "INR",
+    check_in_date: q.check_in,
+    check_out_date: q.check_out,
+    ...partyParams(q.adults, q.children_ages),
+    api_key: apiKey,
+  };
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  return url.toString();
+}
+
+/** One offer per listed rate (or per room when it lists no separate rates); entries without a price are skipped. */
+function roomOffers(payload: z.infer<typeof DetailsPayload>): GoogleRoomOffer[] {
+  return (payload.featured_prices ?? []).flatMap((site) => {
+    // A site or room Google doesn't name can't be attributed or judged, so it is skipped.
+    const source = site.source;
+    if (!source) return [];
+    const capacity = REPORTS_CAPACITY.test(source);
+    return (site.rooms ?? []).flatMap((room) => {
+      const name = room.name;
+      if (!name) return [];
+      const rates = room.rates?.length ? room.rates : [room];
+      return rates.flatMap((rate): GoogleRoomOffer[] => {
+        const perNight = rate.rate_per_night?.extracted_lowest;
+        if (perNight == null) return [];
+        return [
+          {
+            seller: source,
+            room: name,
+            guests: capacity ? (rate.num_guests ?? room.num_guests ?? null) : null,
+            per_night: perNight,
+            currency: "INR",
+            url: rate.link ?? room.link ?? site.link ?? null,
+          },
+        ];
+      });
+    });
+  });
 }
 
 export function createSerpApi(opts: SerpApiOptions) {
@@ -133,35 +246,40 @@ export function createSerpApi(opts: SerpApiOptions) {
 
   type Page = { props: Prop[]; fetchedAt: string; next: string | null };
 
+  /** One SerpApi search against the quota; null when Google has no results, AppError on any other in-band error. */
+  async function request<T extends { error?: string | null }>(
+    schema: z.ZodType<T>,
+    url: string,
+  ): Promise<T | null> {
+    if (quotaRemaining() <= 0) {
+      throw new AppError(
+        "QUOTA_EXHAUSTED",
+        `SerpApi monthly quota of ${monthlyQuota} searches is used up`,
+        "Cached searches still work; new areas or dates must wait for next month.",
+      );
+    }
+    used++;
+    const payload = parseUpstream("serpapi", schema, await getJson(url, http));
+    if (payload.error) {
+      // "hasn't returned any results" is a valid empty answer, not a failure.
+      if (/hasn't returned any results|no results/i.test(payload.error)) return null;
+      if (/run out of searches|plan.*limit/i.test(payload.error)) {
+        used = monthlyQuota;
+        throw new AppError("QUOTA_EXHAUSTED", `SerpApi: ${upstreamText(payload.error)}`);
+      }
+      throw new AppError("UPSTREAM_UNAVAILABLE", `SerpApi: ${upstreamText(payload.error)}`);
+    }
+    return payload;
+  }
+
   async function fetchPage(q: HotelSearchQuery, token: string | null): Promise<Page> {
     const withToken = (url: string) => (token ? `${url}&next_page_token=${encodeURIComponent(token)}` : url);
     // Everything that changes the request changes the cache key (the URL without the key).
     const key = withToken(serpApiUrl(q, "-"));
     return cache.getOrSet(key, CACHE_TTL_MS, async () => {
-      if (quotaRemaining() <= 0) {
-        throw new AppError(
-          "QUOTA_EXHAUSTED",
-          `SerpApi monthly quota of ${monthlyQuota} searches is used up`,
-          "Cached searches still work; new areas or dates must wait for next month.",
-        );
-      }
-      used++;
-      const payload = parseUpstream(
-        "serpapi",
-        Payload,
-        await getJson(withToken(serpApiUrl(q, apiKey, baseUrl)), http),
-      );
+      const payload = await request(Payload, withToken(serpApiUrl(q, apiKey, baseUrl)));
       const fetchedAt = new Date(now()).toISOString();
-      if (payload.error) {
-        // "hasn't returned any results" is a valid empty answer, not a failure.
-        if (/hasn't returned any results|no results/i.test(payload.error))
-          return { props: [], fetchedAt, next: null };
-        if (/run out of searches|plan.*limit/i.test(payload.error)) {
-          used = monthlyQuota;
-          throw new AppError("QUOTA_EXHAUSTED", `SerpApi: ${upstreamText(payload.error)}`);
-        }
-        throw new AppError("UPSTREAM_UNAVAILABLE", `SerpApi: ${upstreamText(payload.error)}`);
-      }
+      if (!payload) return { props: [], fetchedAt, next: null };
       return {
         props: payload.properties ?? [],
         fetchedAt,
@@ -240,11 +358,26 @@ export function createSerpApi(opts: SerpApiOptions) {
     };
   }
 
-  const provider: HotelSearchProvider & { quotaRemaining: () => number } = {
+  const roomsCache = new TtlCache<GoogleRoomOffer[]>(200, now);
+
+  /** Every room Google's hotel page lists for these dates, per booking site (1 SerpApi search, cached 24 h). */
+  async function rooms(propertyToken: string, q: GoogleRoomsQuery): Promise<GoogleRoomOffer[]> {
+    // Everything that changes the request changes the cache key (the URL without the key).
+    return roomsCache.getOrSet(serpApiRoomsUrl(propertyToken, q, "-"), CACHE_TTL_MS, async () => {
+      const payload = await request(DetailsPayload, serpApiRoomsUrl(propertyToken, q, apiKey, baseUrl));
+      return payload ? roomOffers(payload) : [];
+    });
+  }
+
+  const provider: HotelSearchProvider & {
+    quotaRemaining: () => number;
+    rooms: (propertyToken: string, q: GoogleRoomsQuery) => Promise<GoogleRoomOffer[]>;
+  } = {
     info: SERPAPI_INFO,
     search: async (q) => (await searchWithCoverage(q)).hotels,
     searchWithCoverage,
     quotaRemaining,
+    rooms,
   };
   return provider;
 }
@@ -278,7 +411,9 @@ function quote(
 /** One quote per booking source when Google lists them, else the property's lowest rate. */
 function quotes(p: Prop, fetchedAt: string): PriceQuote[] {
   const perSource = (p.prices ?? [])
-    .map((s) => quote(s.source, s.rate_per_night, s.total_rate, s.link ?? p.link ?? null, fetchedAt))
+    .map((s) =>
+      s.source ? quote(s.source, s.rate_per_night, s.total_rate, s.link ?? p.link ?? null, fetchedAt) : null,
+    )
     .filter((x): x is PriceQuote => x !== null);
   if (perSource.length) return perSource;
   // Google's headline rate doesn't say which site offers it.

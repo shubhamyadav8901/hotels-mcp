@@ -35,7 +35,7 @@ import {
 } from "./data/datasets.js";
 import { createNominatim, createPhoton } from "./providers/geocoders.js";
 import { createOsmLodging } from "./providers/osm-lodging.js";
-import { createSerpApi, SERPAPI_INFO } from "./providers/serpapi.js";
+import { createSerpApi, SERPAPI_INFO, type SerpApi } from "./providers/serpapi.js";
 import { createXotelo, loadXoteloKeys, type Xotelo } from "./providers/xotelo.js";
 import { createOsrm } from "./providers/osrm.js";
 import { RetiringRooms } from "./core/retiring.js";
@@ -56,6 +56,8 @@ export interface Deps {
   xotelo: Pick<Xotelo, "rates" | "info">;
   /** Looks one known hotel up in trivago by name (id-checked). */
   trivago: Pick<TrivagoProvider, "lookup" | "info">;
+  /** Google's room list for one hotel (SerpApi); null without a key. */
+  serp: Pick<SerpApi, "rooms" | "info"> | null;
   fx: { rates(): Promise<FxRates> };
   gazetteer: Gazetteer;
   travel: TravelDeps;
@@ -148,6 +150,7 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
     hotelProviders,
     xotelo,
     trivago,
+    serp: serpapi,
     fx,
     gazetteer,
     travel: {
@@ -198,6 +201,7 @@ export function createServer(deps: Deps): McpServer {
     gazetteer: deps.gazetteer,
     xotelo: deps.xotelo,
     trivago: deps.trivago,
+    serp: deps.serp,
     memory: deps.memory,
     now: deps.now,
   });

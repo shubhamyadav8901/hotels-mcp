@@ -6,6 +6,7 @@
  *
  * IRCTC's terms forbid automated access, so its list is fetched only on an explicit, manual refresh.
  */
+import "../src/net-setup.js";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { constants as cryptoConstants } from "node:crypto";

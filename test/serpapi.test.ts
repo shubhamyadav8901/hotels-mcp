@@ -127,6 +127,19 @@ describe("serpapi provider", () => {
     await expect(bad.serp.search(query)).rejects.toMatchObject({ code: "UPSTREAM_UNAVAILABLE" });
   });
 
+  it("skips a price Google lists without naming its site, keeping the hotel and its other prices", async () => {
+    const body = fixture() as { properties: { prices?: Record<string, unknown>[] }[] };
+    const withPrices = body.properties.find((p) => (p.prices?.length ?? 0) > 0)!;
+    const named = withPrices.prices!.length;
+    withPrices.prices!.push({ rate_per_night: { lowest: "₹999", extracted_lowest: 999 } });
+    const { serp } = make(body);
+    const hotels = await serp.search(query);
+    expect(hotels.length).toBeGreaterThan(0);
+    const all = hotels.flatMap((h) => h.prices);
+    expect(all.some((p) => p.per_night === 999)).toBe(false);
+    expect(hotels.some((h) => h.prices.length === named)).toBe(true);
+  });
+
   it("reports a changed payload shape as SCHEMA_CHANGED", async () => {
     const { serp } = make({ properties: [{ title: "no name field" }] });
     await expect(serp.search(query)).rejects.toMatchObject({ code: "SCHEMA_CHANGED" });

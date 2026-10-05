@@ -4,7 +4,14 @@ import { AppError, toAppError } from "../core/errors.js";
 import { searchPlaceName, type Anchor, type Gazetteer } from "../core/anchors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
 import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/hotel-search.js";
-import { effectivePrice, OCCUPANCY_LEVELS, OCCUPANCY_LEVELS_TEXT } from "../core/occupancy.js";
+import {
+  FIT_BASES,
+  FIT_BASIS_TEXT,
+  ROOM_FIT_TEXT,
+  ROOM_FITS,
+  ROOM_STATUS_TEXT,
+  ROOM_STATUSES,
+} from "../core/occupancy.js";
 import { travelMatrix, type TravelDeps } from "../core/travel.js";
 import type { PriceQuote } from "../core/types.js";
 import { handle, readOnly } from "./common.js";
@@ -43,13 +50,12 @@ const PriceOut = z.object({
     .describe("Whether the rate is refundable (null when the source does not say)."),
   url: z.string().nullable().describe("Link to the offer or hotel page at the source, when given."),
   room: z.string().nullable().describe("Room type as the source names it (null when it does not say)."),
-  occupancy: z
-    .enum(OCCUPANCY_LEVELS)
-    .describe(`How far this price is known to be ONE room for the whole party: ${OCCUPANCY_LEVELS_TEXT}`),
-  occupancy_note: z
+  fit: z.enum(ROOM_FITS).describe(`Whether this price is ONE room for the whole party: ${ROOM_FIT_TEXT}`),
+  fit_basis: z.enum(FIT_BASES).describe(FIT_BASIS_TEXT),
+  fit_note: z
     .string()
     .nullable()
-    .describe("Why the occupancy level was given, when there is more to say."),
+    .describe("The evidence behind fit in words (room name, ratio, what is unknown)."),
   fetched_at: z.string().describe("ISO time the source returned this price."),
 });
 
@@ -69,14 +75,14 @@ const HotelOut = z.object({
     .describe("Guest review score on a 0–10 scale, from the source with the most reviews (null if unrated)."),
   review_count: z.number().nullable().describe("Number of guest reviews behind rating_10 (null if unknown)."),
   cheapest: PriceOut.nullable().describe(
-    "Lowest available per-night price in INR across all sources (null when no source priced the hotel).",
+    "Lowest available per-night price in INR across all sources, of any fit (may be two rooms; see fit); null when no source priced the hotel.",
   ),
-  cheapest_single_room: PriceOut.nullable().describe(
-    "Lowest price confirmed or likely to be one room for the party, given only when cheapest is unverified and differs.",
+  rank_price: PriceOut.nullable().describe(
+    "Price the hotel is ranked and filtered by, when it differs from cheapest: its cheapest one-room price, else its cheapest price not known to be two rooms (null when that is cheapest).",
   ),
-  two_rooms_left_out: PriceOut.nullable().describe(
-    "Cheapest price left out because it was for two rooms (about double the same source's 2-adult price, see its occupancy_note), when it is cheaper than the price the hotel is ranked by (cheapest_single_room, else cheapest); null otherwise or with include_two_room_prices.",
-  ),
+  room_status: z
+    .enum(ROOM_STATUSES)
+    .describe(`What the hotel's prices show about one room for the party: ${ROOM_STATUS_TEXT}`),
   price_count: z.number().describe("Number of prices found across all sources and sellers."),
   sources: z.array(z.string()).describe("Ids of the sources that list this hotel."),
 });
@@ -148,8 +154,9 @@ const priceOut = (p: PriceQuote): z.infer<typeof PriceOut> => ({
   refundable: p.refundable,
   url: p.url,
   room: p.room,
-  occupancy: p.occupancy ?? "likely",
-  occupancy_note: p.occupancy_note ?? null,
+  fit: p.fit ?? "unknown",
+  fit_basis: p.fit_basis ?? "none",
+  fit_note: p.fit_note ?? null,
   fetched_at: p.fetched_at,
 });
 
@@ -164,15 +171,9 @@ const hotelOut = (h: RankedHotel): z.infer<typeof HotelOut> => ({
   rating_10: h.rating_10,
   review_count: h.review_count,
   cheapest: h.cheapest ? priceOut(h.cheapest) : null,
-  // Only when it differs: the cheapest price is unverified as one room for the party.
-  cheapest_single_room:
-    h.cheapest_single_room && h.cheapest_single_room !== h.cheapest ? priceOut(h.cheapest_single_room) : null,
-  // Only when it would have looked like a better deal than what is shown.
-  two_rooms_left_out:
-    h.two_rooms_left_out &&
-    (h.two_rooms_left_out.per_night_inr ?? Infinity) < (effectivePrice(h)?.per_night_inr ?? Infinity)
-      ? priceOut(h.two_rooms_left_out)
-      : null,
+  // Only when it differs from cheapest (which may then be a two-room or unknown price).
+  rank_price: h.rank_price && h.rank_price !== h.cheapest ? priceOut(h.rank_price) : null,
+  room_status: h.room_status,
   price_count: h.prices.length,
   sources: h.sources,
 });
@@ -196,11 +197,12 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         "sources merged per hotel. The place is one of: lat+lng, an Indian Railways station code, an airport " +
         "IATA code, or a place name. Returns each hotel's id, coordinates, straight-line distance, stars, " +
         "guest rating and cheapest current price in INR (with original currency, seller, source and, where the " +
-        "source names it, the room type). Every search is for one room that fits the party; each price says " +
-        "how far that is established (occupancy: confirmed, likely, unverified or two_rooms). For 3–4 guests, " +
-        "trivago and Xotelo prices are compared with their own 2-adult prices; hotels priced only as two rooms " +
-        "are left out unless include_two_room_prices is set. When the cheapest price is unverified, " +
-        "cheapest_single_room gives the cheapest that is not. With " +
+        "source names it, the room type). Every source is asked for one room that fits the party, but most show " +
+        "only their cheapest offer, which for 3+ guests is often two rooms. Each price has fit (one_room, " +
+        "two_rooms or unknown) with its evidence, and each hotel has room_status and rank_price. Sorted " +
+        "by price, a hotel is ranked by its cheapest one-room price, else its cheapest price not known to be two " +
+        "rooms, and hotels priced only as two rooms come last; no hotel is left out for that, since a room for " +
+        "the party may exist at a higher price. get_hotel_rates with verify_room checks a shortlist. With " +
         "max_drive_minutes, keeps only hotels within that drive time (OpenStreetMap routing with a traffic " +
         "allowance) and adds drive_minutes. Results are paginated. Per-seller prices are in get_hotel_rates; " +
         "times to other places are in compare_hotels. coverage reports what each source returned and what limited it " +
@@ -229,12 +231,6 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
           .default(false)
           .describe(
             "Also list hotels with no live price (OpenStreetMap listings), for places with thin price coverage.",
-          ),
-        include_two_room_prices: z
-          .boolean()
-          .default(false)
-          .describe(
-            "Also keep prices labelled two_rooms (3–4 guests priced about double the same source's 2-adult price).",
           ),
         max_drive_minutes: z
           .number()
@@ -290,7 +286,6 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         min_stars: a.min_stars,
         min_rating_10: pctTo10(a.min_rating_pct),
         include_unpriced: true,
-        include_two_room_prices: a.include_two_room_prices,
       });
       const notes = [
         "Each source returns a limited set (see coverage), so this is not every hotel in the radius; hotels a source did not return are missing, not unavailable.",
@@ -333,11 +328,6 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
           `${r.unrated_hidden} hotels were left out by min_rating_pct because no source rates them.`,
         );
       }
-      if (r.two_rooms_hidden > 0) {
-        notes.push(
-          `${r.two_rooms_hidden} hotels were left out because every price found was for two rooms (about double the same source's 2-adult price); set include_two_room_prices=true to list them.`,
-        );
-      }
       if (r.sources_ok.includes("osm_lodging")) {
         notes.push("Some locations © OpenStreetMap contributors (ODbL).");
       }
@@ -377,6 +367,15 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         }
       }
 
+      const guests = a.adults + a.children_ages.length;
+      if (guests > 2 && ranked.length > 0) {
+        const count = (st: string) => ranked.filter((h) => h.room_status === st).length;
+        notes.push(
+          `Of ${ranked.length} hotels, ${count("one_room")} have a price known to be one room for ${guests}, ` +
+            `${count("two_rooms_only")} only prices known to be two rooms (a room for ${guests} may still exist at a higher price), ` +
+            `and ${count("unverified")} are unverified. get_hotel_rates with verify_room checks a hotel's rooms.`,
+        );
+      }
       const page = ranked.slice(a.offset, a.offset + a.limit);
       return {
         anchor: { ...anchorOut(anchor) },

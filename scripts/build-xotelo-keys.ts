@@ -17,6 +17,7 @@
  * Polite: requests are serial and at least 1.2 s apart, with backoff on errors. Progress is checkpointed
  * to data/.xotelo-checkpoint.json after every call, so an interrupted run resumes where it stopped.
  */
+import "../src/net-setup.js";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

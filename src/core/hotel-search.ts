@@ -4,7 +4,7 @@ import type { HotelSearchProvider, SearchOutcome } from "../providers/types.js";
 import { toAppError } from "./errors.js";
 import { haversineKm, roundTo } from "./geo.js";
 import { cheapest, mergeCandidates, type MergedHotel } from "./merge.js";
-import { cheapestSingleRoom, effectivePrice, occupancyLabel } from "./occupancy.js";
+import { rankPrice, roomFit, roomStatus, type RoomStatus } from "./occupancy.js";
 import type { HotelCandidate, HotelSearchQuery, PriceQuote } from "./types.js";
 
 export type SortKey = "distance" | "price" | "rating";
@@ -16,8 +16,6 @@ export interface SearchOptions {
   min_rating_10?: number | undefined;
   /** Keep hotels with no live price (e.g. OpenStreetMap-only listings). */
   include_unpriced?: boolean | undefined;
-  /** Keep prices labelled two_rooms (about double the 2-adult price); left out by default. */
-  include_two_room_prices?: boolean | undefined;
   sort: SortKey;
 }
 
@@ -29,11 +27,11 @@ export interface SourceFailure {
 
 export interface RankedHotel extends MergedHotel {
   distance_km: number;
+  /** Lowest bookable price of any kind. */
   cheapest: PriceQuote | null;
-  /** Cheapest price confirmed or likely to be one room for the party; differs from `cheapest` when that is unverified. */
-  cheapest_single_room: PriceQuote | null;
-  /** Cheapest price left out as two rooms, while the hotel is listed for its other prices. */
-  two_rooms_left_out: PriceQuote | null;
+  /** Price the hotel is ranked and filtered by (see rankPrice). */
+  rank_price: PriceQuote | null;
+  room_status: RoomStatus;
 }
 
 export interface HotelSearchResult {
@@ -43,8 +41,6 @@ export interface HotelSearchResult {
   unpriced_hidden: number;
   /** Hotels left out by min_rating_10 because no source rates them. */
   unrated_hidden: number;
-  /** Hotels left out because every live price they had was for two rooms (unless include_two_room_prices). */
-  two_rooms_hidden: number;
   sources_ok: string[];
   sources_failed: SourceFailure[];
   /** What each answering source contributed, and what limited it (sources return limited pages). */
@@ -117,33 +113,21 @@ export async function searchHotels(
     sources_failed,
     q.adults + (q.children_ages?.length ?? 0),
   );
-  // A two-room price is no answer for one room, so it is dropped. A hotel priced only that way keeps its
-  // prices through the filters below (as it would with include_two_room_prices) and is counted and dropped
-  // at the end, so the count is what include_two_room_prices would add.
-  const twoRoomsOnly = new Set<string>();
-  const merged = mergeCandidates(converted).map((h) => {
-    if (opts.include_two_room_prices || !h.prices.some((p) => p.occupancy === "two_rooms"))
-      return { ...h, two_rooms_left_out: null };
-    const prices = h.prices.filter((p) => p.occupancy !== "two_rooms");
-    const leftOut = cheapest(h.prices.filter((p) => p.occupancy === "two_rooms"));
-    if (prices.length > 0) return { ...h, prices, two_rooms_left_out: leftOut };
-    twoRoomsOnly.add(h.hotel_id);
-    return { ...h, two_rooms_left_out: null };
-  });
-  let hotels: RankedHotel[] = merged
+  let hotels: RankedHotel[] = mergeCandidates(converted)
     .map((h) => ({
       ...h,
       distance_km: roundTo(haversineKm(q, h), 2),
       cheapest: cheapest(h.prices),
-      cheapest_single_room: cheapestSingleRoom(h.prices),
+      rank_price: rankPrice(h.prices),
+      room_status: roomStatus(h.prices),
     }))
     .filter((h) => h.distance_km <= q.radius_km);
 
   if (opts.max_price_inr !== undefined) {
     const max = opts.max_price_inr;
-    // Rank and filter by the cheapest single-room price when a hotel has one, not a possible two-room price.
+    // Filter by the price the hotel is ranked by: one room when known, not a cheaper two-room price.
     hotels = hotels.filter((h) => {
-      const p = effectivePrice(h);
+      const p = h.rank_price;
       return p !== null && (p.per_night_inr as number) <= max;
     });
   }
@@ -158,8 +142,6 @@ export async function searchHotels(
     const min = opts.min_stars;
     hotels = hotels.filter((h) => (h.stars ?? 0) >= min);
   }
-  const two_rooms_hidden = hotels.filter((h) => twoRoomsOnly.has(h.hotel_id)).length;
-  hotels = hotels.filter((h) => !twoRoomsOnly.has(h.hotel_id));
   let unpriced_hidden = 0;
   if (!opts.include_unpriced) {
     const priced = hotels.filter((h) => h.cheapest !== null);
@@ -172,7 +154,6 @@ export async function searchHotels(
     hotels,
     unpriced_hidden,
     unrated_hidden,
-    two_rooms_hidden,
     sources_ok,
     sources_failed,
     coverage,
@@ -211,16 +192,19 @@ async function convertPrices(
   };
   const converted = candidates.map((c) => ({
     ...c,
-    prices: c.prices.map((p) => ({ ...p, per_night_inr: toInr(p), ...occupancyLabel(p, guests) })),
+    prices: c.prices.map((p) => ({ ...p, per_night_inr: toInr(p), ...roomFit(p, guests) })),
   }));
   return { converted, fx };
 }
 
 export function comparator(sort: SortKey): (a: RankedHotel, b: RankedHotel) => number {
-  const price = (h: RankedHotel) => effectivePrice(h)?.per_night_inr ?? Number.POSITIVE_INFINITY;
+  const price = (h: RankedHotel) => h.rank_price?.per_night_inr ?? Number.POSITIVE_INFINITY;
+  // By price, hotels priced only as two rooms come after the rest: their price is not for one room.
+  const twoRoomsLast = (h: RankedHotel) => (h.room_status === "two_rooms_only" ? 1 : 0);
   switch (sort) {
     case "price":
-      return (a, b) => price(a) - price(b) || a.distance_km - b.distance_km;
+      return (a, b) =>
+        twoRoomsLast(a) - twoRoomsLast(b) || price(a) - price(b) || a.distance_km - b.distance_km;
     case "rating":
       return (a, b) => (b.rating_10 ?? -1) - (a.rating_10 ?? -1) || a.distance_km - b.distance_km;
     case "distance":

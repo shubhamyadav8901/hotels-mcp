@@ -139,8 +139,8 @@ image) and `ALLOWED_HOSTS` (comma-separated extra hostnames accepted in the `Hos
 `docker-compose.yml`.
 
 Searches are for **one room that fits the whole party**: `adults` (1–8) plus `children_ages` (up to 4 children,
-ages 0–17), at most 8 guests. Every source is asked for that occupancy, so a family of four sees only rooms (and
-prices) for four. Xotelo cannot price children, so it counts them as adults. With `sort=price`, Google Hotels and
+ages 0–17), at most 8 guests. Every source is asked for that occupancy, but most return only their cheapest offer,
+which for 3+ guests is often two rooms (see "One room, really?" below). Xotelo cannot price children, so it counts them as adults. With `sort=price`, Google Hotels and
 HotelsCasa return their cheapest results rather than their most relevant ones. `min_stars` (and, for Google,
 `max_price_inr`) is also applied by those sources on their own price basis, before results are merged. A town or city name (`place:
 "Jaipur"`) searches the town, not its main station.
@@ -157,24 +157,32 @@ Guest-rating floor: `min_rating_pct` (e.g. 60 = 6.0/10 = 3.0/5). Its default com
 it per request ("at least 80%" → `80`, "include unrated hotels" → `0`). While it is on, hotels no source rates
 are left out, and the notes say how many.
 
-One room, really? Each price carries `occupancy`: `confirmed` (the source names a room that sleeps the party,
-e.g. a HotelsCasa "Family Room"), `likely` (the source searched for the party but names no room, e.g. Google),
-`unverified` or `two_rooms`. trivago and Xotelo name no room, and live checks found that for 3–4 guests they
-often price **two rooms** under a one-room request: trivago's 4-adult price matched its explicit 2-room price at
-every hotel compared (2.0–2.26× the 2-adult price). So for 3–4 guests `search_hotels` also asks them for 2
-adults and compares each hotel's price with that 2-adult price (same source, or for Xotelo the same seller):
-under 1.1× stays `unverified` (a two-person room, or a whole unit priced the same for any party), 1.1–1.85× is `likely` (an extra-guest charge or a
-bigger room), and 1.85× or more is `two_rooms`. Prices with no 2-adult price to compare stay `unverified`.
-Hotels priced only as two rooms are left out (the notes say how many); `include_two_room_prices: true` lists
-them, labelled. A hotel listed for its other prices shows a cheaper two-room price it left out in
-`two_rooms_left_out`, so the gap can be explained. When a hotel's cheapest price is not one room, `cheapest_single_room` gives its cheapest
-confirmed-or-likely price; sorting by price, `max_price_inr` and `plan_stays` scoring use that. For hotels the
-search could not check, `get_hotel_rates` with `check_single_room: true` re-prices the unverified sources for 2
-adults and gives each price a verdict: `priced_as_2_adults` (≤1.1×), `plausible_single_room` (1.1–1.85×),
-`looks_like_2_rooms` (1.85–2.15×), `unusually_high` (2.15–4×), `implausible` (≥4×) or `unknown` (no 2-adult
-price, or a party over 4). When trivago's area search leaves a hotel out, trivago is asked for it by name
-(accepted only if trivago returns the same hotel id); if the hotel still can't be found live, the prices the
-search returned for the same stay and party are used.
+One room, really? Every source is asked for one room for the party, but most show only their **cheapest
+offer per booking site**, and for 3+ guests that is often two rooms: asked for one room for 4 adults, trivago's
+price matched its explicit two-room price at every hotel checked, and Agoda lists the same deal as "Cheapest
+combo rooms". A real room for 4 (family, quad) usually exists at a higher price that those sources never show.
+So each price carries `fit` with its evidence (`fit_basis`, `fit_note`):
+
+| fit         | when                                                                                                                                                                                                |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `one_room`  | the room's name sleeps the party (HotelsCasa "Family 4 People"), or the booking site states the rate for that many guests (Booking.com and Agoda in Google's room list); every price for 1–2 guests |
+| `two_rooms` | the name says combo / 2 rooms or a multi-bedroom unit, or the price is about exactly double (1.9–2.15×) the same booking site's 2-adult price                                                       |
+| `unknown`   | anything else: a price ratio never proves one room, and a real family room often costs 2.5× or more                                                                                                 |
+
+Each hotel gets `room_status` (`one_room`, `unverified` or `two_rooms_only`) and, when it differs from `cheapest`,
+`rank_price`: the price it is ranked and filtered by. No hotel is
+left out for having only two-room prices, since a room for the party may exist at a higher price; sorted by
+price, a hotel ranks by its cheapest one-room price (else its cheapest price not known to be two rooms) and
+two-room-only hotels come last. For 3–4 guests the search also asks trivago and Xotelo for 2 adults (same
+points; trivago's 15 cheapest misses by name) to spot doubled prices from the same booking site.
+
+To check a shortlist, `get_hotel_rates` with `verify_room: true` fetches Google's room list for the hotel (1
+SerpApi search from the monthly quota, which its notes report; needs `SERPAPI_KEY` and unofficial sources) — it finds rooms for the party with their prices
+(e.g. Booking.com "Standard Family Room" for 4 guests) and named combos — plus trivago's and Xotelo's 2-adult
+prices, and re-labels every price. When trivago's area search leaves a hotel out, trivago is asked for it by
+name (accepted only if trivago returns the same hotel id); if the hotel still can't be found live, the prices
+the search returned for the same stay and party are used. No free source lists every room of every site, so
+"no one-room price found" never means the hotel has no room for the party.
 
 Beds: no source can filter by bed type. Where the source names the room (HotelsCasa), each price carries it in
 `room` (e.g. "Family Room", "Comfort Quadruple Room", or "Deluxe Double Room" with extra beds), so check it

@@ -5,7 +5,7 @@ import { AppError } from "../core/errors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
 import type { HotelSearchDeps } from "../core/hotel-search.js";
 import { planStay, type StayRequest } from "../core/itinerary.js";
-import { OCCUPANCY_LEVELS, OCCUPANCY_LEVELS_TEXT } from "../core/occupancy.js";
+import { ROOM_FIT_TEXT, ROOM_FITS, ROOM_STATUS_TEXT, ROOM_STATUSES } from "../core/occupancy.js";
 import {
   RETIRING_ROOM_INDICATIVE_PRICES,
   RETIRING_ROOM_PORTAL,
@@ -148,7 +148,7 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
                       .number()
                       .nullable()
                       .describe(
-                        "Cheapest per-night INR price confirmed or likely to be one room, else the cheapest price.",
+                        "Per-night INR price the hotel is ranked by: its cheapest one-room price, else its cheapest price not known to be two rooms, else its cheapest.",
                       ),
                     seller: z
                       .string()
@@ -156,17 +156,20 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
                       .describe(
                         "Booking site of per_night_inr; the source id when the source names no seller.",
                       ),
-                    occupancy: z
-                      .enum(OCCUPANCY_LEVELS)
+                    fit: z
+                      .enum(ROOM_FITS)
                       .nullable()
+                      .describe(`Whether per_night_inr is ONE room for the whole party: ${ROOM_FIT_TEXT}`),
+                    room_status: z
+                      .enum(ROOM_STATUSES)
                       .describe(
-                        `How far per_night_inr is known to be ONE room for the whole party: ${OCCUPANCY_LEVELS_TEXT}`,
+                        `What the hotel's prices show about one room for the party: ${ROOM_STATUS_TEXT}`,
                       ),
-                    cheaper_unverified_per_night_inr: z
+                    cheaper_other_per_night_inr: z
                       .number()
                       .nullable()
                       .describe(
-                        "A cheaper per-night INR price that is unverified as one room, when there is one.",
+                        "A cheaper per-night INR price not known to be one room (possibly two rooms), when there is one.",
                       ),
                     minutes_from_arrival: z
                       .number()

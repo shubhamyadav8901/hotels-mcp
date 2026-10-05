@@ -115,7 +115,7 @@ Turns a name or code into coordinates, or coordinates into nearby transport poin
 
 **Search hotels near a place**
 
-Finds hotels around a place in India for given dates, with live prices from several meta-search sources merged per hotel. The place is one of: lat+lng, an Indian Railways station code, an airport IATA code, or a place name. Returns each hotel's id, coordinates, straight-line distance, stars, guest rating and cheapest current price in INR (with original currency, seller, source and, where the source names it, the room type). Every search is for one room that fits the party; each price says how far that is established (occupancy: confirmed, likely, unverified or two_rooms). For 3–4 guests, trivago and Xotelo prices are compared with their own 2-adult prices; hotels priced only as two rooms are left out unless include_two_room_prices is set. When the cheapest price is unverified, cheapest_single_room gives the cheapest that is not. With max_drive_minutes, keeps only hotels within that drive time (OpenStreetMap routing with a traffic allowance) and adds drive_minutes. Results are paginated. Per-seller prices are in get_hotel_rates; times to other places are in compare_hotels. coverage reports what each source returned and what limited it (sources return limited pages, so the list is not exhaustive). Does not book.
+Finds hotels around a place in India for given dates, with live prices from several meta-search sources merged per hotel. The place is one of: lat+lng, an Indian Railways station code, an airport IATA code, or a place name. Returns each hotel's id, coordinates, straight-line distance, stars, guest rating and cheapest current price in INR (with original currency, seller, source and, where the source names it, the room type). Every source is asked for one room that fits the party, but most show only their cheapest offer, which for 3+ guests is often two rooms. Each price has fit (one_room, two_rooms or unknown) with its evidence, and each hotel has room_status and rank_price. Sorted by price, a hotel is ranked by its cheapest one-room price, else its cheapest price not known to be two rooms, and hotels priced only as two rooms come last; no hotel is left out for that, since a room for the party may exist at a higher price. get_hotel_rates with verify_room checks a shortlist. With max_drive_minutes, keeps only hotels within that drive time (OpenStreetMap routing with a traffic allowance) and adds drive_minutes. Results are paginated. Per-seller prices are in get_hotel_rates; times to other places are in compare_hotels. coverage reports what each source returned and what limited it (sources return limited pages, so the list is not exhaustive). Does not book.
 
 ### Input
 
@@ -135,7 +135,6 @@ Finds hotels around a place in India for given dates, with live prices from seve
 | `min_stars` | integer |  |  | ≥ 1, ≤ 5 | Minimum hotel class (official stars). |
 | `min_rating_pct` | number |  | `0` | ≥ 0, ≤ 100 | Minimum guest rating in percent, e.g. 60 = 6.0/10 = 3.0/5. Default 0 (server setting); 0 turns the filter off. While on, hotels with no guest rating are left out. |
 | `include_unpriced` | boolean |  | `false` |  | Also list hotels with no live price (OpenStreetMap listings), for places with thin price coverage. |
-| `include_two_room_prices` | boolean |  | `false` |  | Also keep prices labelled two_rooms (3–4 guests priced about double the same source's 2-adult price). |
 | `max_drive_minutes` | integer |  |  | ≥ 5, ≤ 180 | Only hotels within this many minutes' drive of the place (traffic-adjusted). |
 | `sort` | `"distance"` \| `"price"` \| `"rating"` \| `"drive_time"` |  | `"distance"` |  | Sort order; drive_time needs max_drive_minutes. |
 | `limit` | integer |  | `10` | ≥ 1, ≤ 30 | Hotels per page. |
@@ -171,7 +170,7 @@ Finds hotels around a place in India for given dates, with live prices from seve
 | `hotels[].stars` | number \| null | Official hotel class, 1–5 stars (null if unknown). |
 | `hotels[].rating_10` | number \| null | Guest review score on a 0–10 scale, from the source with the most reviews (null if unrated). |
 | `hotels[].review_count` | number \| null | Number of guest reviews behind rating_10 (null if unknown). |
-| `hotels[].cheapest` | object \| null | Lowest available per-night price in INR across all sources (null when no source priced the hotel). |
+| `hotels[].cheapest` | object \| null | Lowest available per-night price in INR across all sources, of any fit (may be two rooms; see fit); null when no source priced the hotel. |
 | `hotels[].cheapest.per_night_inr` | number \| null | Per-night price converted to INR (null if no exchange rate). |
 | `hotels[].cheapest.per_night` | number | Per-night price in the source's original currency. |
 | `hotels[].cheapest.currency` | string | ISO currency code of per_night, e.g. INR or USD. |
@@ -182,37 +181,26 @@ Finds hotels around a place in India for given dates, with live prices from seve
 | `hotels[].cheapest.refundable` | boolean \| null | Whether the rate is refundable (null when the source does not say). |
 | `hotels[].cheapest.url` | string \| null | Link to the offer or hotel page at the source, when given. |
 | `hotels[].cheapest.room` | string \| null | Room type as the source names it (null when it does not say). |
-| `hotels[].cheapest.occupancy` | `"confirmed"` \| `"likely"` \| `"unverified"` \| `"two_rooms"` | How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named; for trivago and Xotelo, under 1.85x their 2-adult price), unverified (the source may quote two rooms for 3+ guests and there is no 2-adult price to compare, or a multi-bedroom unit), two_rooms (about double or more the same source's 2-adult price). |
-| `hotels[].cheapest.occupancy_note` | string \| null | Why the occupancy level was given, when there is more to say. |
+| `hotels[].cheapest.fit` | `"one_room"` \| `"two_rooms"` \| `"unknown"` | Whether this price is ONE room for the whole party: one_room (a room name that sleeps the party, or a booking site's rate stated for that many guests; every price for 1–2 guests), two_rooms (a combo or multi-bedroom unit by name, or about exactly double the same booking site's 2-adult price), unknown (not shown to be either; fit_note says what is known). |
+| `hotels[].cheapest.fit_basis` | `"party_search"` \| `"room_name"` \| `"room_capacity"` \| `"price_ratio"` \| `"none"` | Evidence for fit: party_search (the source was searched for the party; proves one room only for 1–2 guests), room_name (the room's name), room_capacity (the booking site's stated guest count for the rate), price_ratio (compared with the same booking site's 2-adult price), none. |
+| `hotels[].cheapest.fit_note` | string \| null | The evidence behind fit in words (room name, ratio, what is unknown). |
 | `hotels[].cheapest.fetched_at` | string | ISO time the source returned this price. |
-| `hotels[].cheapest_single_room` | object \| null | Lowest price confirmed or likely to be one room for the party, given only when cheapest is unverified and differs. |
-| `hotels[].cheapest_single_room.per_night_inr` | number \| null | Per-night price converted to INR (null if no exchange rate). |
-| `hotels[].cheapest_single_room.per_night` | number | Per-night price in the source's original currency. |
-| `hotels[].cheapest_single_room.currency` | string | ISO currency code of per_night, e.g. INR or USD. |
-| `hotels[].cheapest_single_room.seller` | string \| null | Booking site the price is from, e.g. Booking.com (null when the source does not name one). |
-| `hotels[].cheapest_single_room.source` | string | Id of the data source that returned the price, e.g. trivago. |
-| `hotels[].cheapest_single_room.includes_taxes` | boolean \| null | Whether the price includes taxes such as GST (null when the source does not say). |
-| `hotels[].cheapest_single_room.available` | boolean \| null | Whether the source reports the room as bookable for these dates (null when it does not say). |
-| `hotels[].cheapest_single_room.refundable` | boolean \| null | Whether the rate is refundable (null when the source does not say). |
-| `hotels[].cheapest_single_room.url` | string \| null | Link to the offer or hotel page at the source, when given. |
-| `hotels[].cheapest_single_room.room` | string \| null | Room type as the source names it (null when it does not say). |
-| `hotels[].cheapest_single_room.occupancy` | `"confirmed"` \| `"likely"` \| `"unverified"` \| `"two_rooms"` | How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named; for trivago and Xotelo, under 1.85x their 2-adult price), unverified (the source may quote two rooms for 3+ guests and there is no 2-adult price to compare, or a multi-bedroom unit), two_rooms (about double or more the same source's 2-adult price). |
-| `hotels[].cheapest_single_room.occupancy_note` | string \| null | Why the occupancy level was given, when there is more to say. |
-| `hotels[].cheapest_single_room.fetched_at` | string | ISO time the source returned this price. |
-| `hotels[].two_rooms_left_out` | object \| null | Cheapest price left out because it was for two rooms (about double the same source's 2-adult price, see its occupancy_note), when it is cheaper than the price the hotel is ranked by (cheapest_single_room, else cheapest); null otherwise or with include_two_room_prices. |
-| `hotels[].two_rooms_left_out.per_night_inr` | number \| null | Per-night price converted to INR (null if no exchange rate). |
-| `hotels[].two_rooms_left_out.per_night` | number | Per-night price in the source's original currency. |
-| `hotels[].two_rooms_left_out.currency` | string | ISO currency code of per_night, e.g. INR or USD. |
-| `hotels[].two_rooms_left_out.seller` | string \| null | Booking site the price is from, e.g. Booking.com (null when the source does not name one). |
-| `hotels[].two_rooms_left_out.source` | string | Id of the data source that returned the price, e.g. trivago. |
-| `hotels[].two_rooms_left_out.includes_taxes` | boolean \| null | Whether the price includes taxes such as GST (null when the source does not say). |
-| `hotels[].two_rooms_left_out.available` | boolean \| null | Whether the source reports the room as bookable for these dates (null when it does not say). |
-| `hotels[].two_rooms_left_out.refundable` | boolean \| null | Whether the rate is refundable (null when the source does not say). |
-| `hotels[].two_rooms_left_out.url` | string \| null | Link to the offer or hotel page at the source, when given. |
-| `hotels[].two_rooms_left_out.room` | string \| null | Room type as the source names it (null when it does not say). |
-| `hotels[].two_rooms_left_out.occupancy` | `"confirmed"` \| `"likely"` \| `"unverified"` \| `"two_rooms"` | How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named; for trivago and Xotelo, under 1.85x their 2-adult price), unverified (the source may quote two rooms for 3+ guests and there is no 2-adult price to compare, or a multi-bedroom unit), two_rooms (about double or more the same source's 2-adult price). |
-| `hotels[].two_rooms_left_out.occupancy_note` | string \| null | Why the occupancy level was given, when there is more to say. |
-| `hotels[].two_rooms_left_out.fetched_at` | string | ISO time the source returned this price. |
+| `hotels[].rank_price` | object \| null | Price the hotel is ranked and filtered by, when it differs from cheapest: its cheapest one-room price, else its cheapest price not known to be two rooms (null when that is cheapest). |
+| `hotels[].rank_price.per_night_inr` | number \| null | Per-night price converted to INR (null if no exchange rate). |
+| `hotels[].rank_price.per_night` | number | Per-night price in the source's original currency. |
+| `hotels[].rank_price.currency` | string | ISO currency code of per_night, e.g. INR or USD. |
+| `hotels[].rank_price.seller` | string \| null | Booking site the price is from, e.g. Booking.com (null when the source does not name one). |
+| `hotels[].rank_price.source` | string | Id of the data source that returned the price, e.g. trivago. |
+| `hotels[].rank_price.includes_taxes` | boolean \| null | Whether the price includes taxes such as GST (null when the source does not say). |
+| `hotels[].rank_price.available` | boolean \| null | Whether the source reports the room as bookable for these dates (null when it does not say). |
+| `hotels[].rank_price.refundable` | boolean \| null | Whether the rate is refundable (null when the source does not say). |
+| `hotels[].rank_price.url` | string \| null | Link to the offer or hotel page at the source, when given. |
+| `hotels[].rank_price.room` | string \| null | Room type as the source names it (null when it does not say). |
+| `hotels[].rank_price.fit` | `"one_room"` \| `"two_rooms"` \| `"unknown"` | Whether this price is ONE room for the whole party: one_room (a room name that sleeps the party, or a booking site's rate stated for that many guests; every price for 1–2 guests), two_rooms (a combo or multi-bedroom unit by name, or about exactly double the same booking site's 2-adult price), unknown (not shown to be either; fit_note says what is known). |
+| `hotels[].rank_price.fit_basis` | `"party_search"` \| `"room_name"` \| `"room_capacity"` \| `"price_ratio"` \| `"none"` | Evidence for fit: party_search (the source was searched for the party; proves one room only for 1–2 guests), room_name (the room's name), room_capacity (the booking site's stated guest count for the rate), price_ratio (compared with the same booking site's 2-adult price), none. |
+| `hotels[].rank_price.fit_note` | string \| null | The evidence behind fit in words (room name, ratio, what is unknown). |
+| `hotels[].rank_price.fetched_at` | string | ISO time the source returned this price. |
+| `hotels[].room_status` | `"one_room"` \| `"unverified"` \| `"two_rooms_only"` | What the hotel's prices show about one room for the party: one_room (at least one price is one room for the party), two_rooms_only (every price found is two rooms; a room for the party may still exist at a higher price), unverified (otherwise). |
 | `hotels[].price_count` | number | Number of prices found across all sources and sellers. |
 | `hotels[].sources` | string[] | Ids of the sources that list this hotel. |
 | `hotels[].drive_minutes` | number \| null | Traffic-adjusted drive time from the search place, minutes (null without max_drive_minutes). |
@@ -233,7 +221,7 @@ Finds hotels around a place in India for given dates, with live prices from seve
 
 **Compare a hotel's prices across sites**
 
-Fetches current prices for one hotel from every source for the given dates and lists them per booking site (e.g. Booking.com, Agoda, Trip.com, MakeMyTrip, the hotel's own site), cheapest first, in INR with the original currency, tax status, availability, links and, where the source names it, the room type (e.g. "Family Room with 2 Double Beds"). The hotel is a hotel_id from search_hotels or plan_stays, or a name with lat/lng. Does not book.
+Fetches current prices for one hotel from every source for the given dates and lists them per booking site (e.g. Booking.com, Agoda, Trip.com, MakeMyTrip, the hotel's own site), cheapest first, in INR with the original currency, tax status, availability, links and, where the source names it, the room type (e.g. "Family Room with 2 Double Beds"). The hotel is a hotel_id from search_hotels or plan_stays, or a name with lat/lng. Each price has fit (one_room, two_rooms or unknown) with its evidence, and the hotel a room_status; verify_room gathers more room evidence. Does not book.
 
 ### Input
 
@@ -247,7 +235,7 @@ Fetches current prices for one hotel from every source for the given dates and l
 | `check_out` | string | yes |  | pattern `^\d{4}-\d{2}-\d{2}$` | Check-out date, YYYY-MM-DD. |
 | `adults` | integer |  | `2` | ≥ 1, ≤ 8 | Adults (18+) sharing the one room searched for. |
 | `children_ages` | integer[] |  | `[]` | items ≤ 4, each ≥ 0, ≤ 17 | Ages (0–17) of children sharing that room, one entry per child, e.g. [6, 9]; empty for adults only. |
-| `check_single_room` | boolean |  | `false` |  | For parties of 3+, re-price the sources whose prices are unverified as one room (trivago, Xotelo) for 2 adults and compare each seller's price: about exactly double suggests two rooms. |
+| `verify_room` | boolean |  | `false` |  | For 3+ guests, gather room evidence: Google's room list for this hotel (1 SerpApi search from a monthly quota, when enabled), where Booking.com and Agoda state each rate's guests, so rooms for the party are found with prices and multi-room combos are named; and, for 3–4 guests, trivago's and Xotelo's 2-adult prices from the same booking sites, from which their prices' fit is re-labelled. |
 
 ### Output
 
@@ -264,7 +252,7 @@ Fetches current prices for one hotel from every source for the given dates and l
 | `hotel.review_count` | number \| null | Number of guest reviews behind rating_10 (null if unknown). |
 | `check_in` | string | Check-in date, YYYY-MM-DD. |
 | `check_out` | string | Check-out date, YYYY-MM-DD. |
-| `prices` | object[] | One entry per source and seller, cheapest per_night_inr first (unconverted prices last). |
+| `prices` | object[] | One entry per offer (per source and seller; with verify_room, also each relevant room from Google's room list), cheapest per_night_inr first (unconverted prices last). |
 | `prices[].seller` | string | Booking site the price is from; the source id when the source names no seller. |
 | `prices[].source` | string | Id of the data source that returned the price, e.g. trivago. |
 | `prices[].per_night_inr` | number \| null | Per-night price converted to INR (null if no exchange rate). |
@@ -276,21 +264,21 @@ Fetches current prices for one hotel from every source for the given dates and l
 | `prices[].refundable` | boolean \| null | Whether the rate is refundable (null when the source does not say). |
 | `prices[].url` | string \| null | Link to the offer or hotel page at the source, when given. |
 | `prices[].room` | string \| null | Room type as the source names it (null when it does not say). |
-| `prices[].occupancy` | `"confirmed"` \| `"likely"` \| `"unverified"` \| `"two_rooms"` | How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named; for trivago and Xotelo, under 1.85x their 2-adult price), unverified (the source may quote two rooms for 3+ guests and there is no 2-adult price to compare, or a multi-bedroom unit), two_rooms (about double or more the same source's 2-adult price). |
-| `prices[].occupancy_note` | string \| null | Why the occupancy level was given, when there is more to say. |
-| `prices[].single_room_check` | object \| null | Present when check_single_room ran for this price. |
-| `prices[].single_room_check.verdict` | `"priced_as_2_adults"` \| `"plausible_single_room"` \| `"looks_like_2_rooms"` \| `"unusually_high"` \| `"implausible"` \| `"unknown"` | Reading of ratio: priced_as_2_adults (≤1.1×), plausible_single_room (1.1–1.85×), looks_like_2_rooms (1.85–2.15×), unusually_high (2.15–4×), implausible (≥4×), unknown (no 2-adult price, or more than 4 guests). |
-| `prices[].single_room_check.two_adult_per_night_inr` | number \| null | Same seller's (for trivago, same source's) per-night INR price for 2 adults at this hotel and dates (null if not found). |
-| `prices[].single_room_check.ratio` | number \| null | per_night_inr divided by two_adult_per_night_inr, 2 decimals (null without both prices). |
+| `prices[].room_guests` | number \| null | Guests the booking site states this rate is for (Booking.com and Agoda in Google's room list); null otherwise. |
+| `prices[].fit` | `"one_room"` \| `"two_rooms"` \| `"unknown"` | Whether this price is ONE room for the whole party: one_room (a room name that sleeps the party, or a booking site's rate stated for that many guests; every price for 1–2 guests), two_rooms (a combo or multi-bedroom unit by name, or about exactly double the same booking site's 2-adult price), unknown (not shown to be either; fit_note says what is known). |
+| `prices[].fit_basis` | `"party_search"` \| `"room_name"` \| `"room_capacity"` \| `"price_ratio"` \| `"none"` | Evidence for fit: party_search (the source was searched for the party; proves one room only for 1–2 guests), room_name (the room's name), room_capacity (the booking site's stated guest count for the rate), price_ratio (compared with the same booking site's 2-adult price), none. |
+| `prices[].fit_note` | string \| null | The evidence behind fit in words (room name, ratio, what is unknown). |
 | `prices[].fetched_at` | string | ISO time the source returned this price. |
-| `cheapest_inr` | number \| null | Lowest per_night_inr among prices (null if none in INR). |
+| `room_status` | `"one_room"` \| `"unverified"` \| `"two_rooms_only"` | What the prices show about one room for the party: one_room (at least one price is one room for the party), two_rooms_only (every price found is two rooms; a room for the party may still exist at a higher price), unverified (otherwise). |
+| `cheapest_one_room_inr` | number \| null | Lowest per_night_inr among prices that are one room for the party (null if none). |
+| `cheapest_inr` | number \| null | Lowest per_night_inr among prices for the whole party, of any fit (null if none in INR). |
 | `priciest_inr` | number \| null | Highest per_night_inr among prices (null if none in INR). |
 | `sources_ok` | string[] | Ids of the sources that answered the re-search near the hotel. |
-| `sources_failed` | object[] | Sources or lookups that did not answer, and why; single_room_check:<source> marks a failed 2-adult lookup. |
+| `sources_failed` | object[] | Sources or lookups that did not answer, and why; verify_room:<source> marks a failed verification lookup. |
 | `sources_failed[].source` | string | Id of the source that failed. |
 | `sources_failed[].code` | string | Error code, e.g. UPSTREAM_UNAVAILABLE or RATE_LIMITED. |
 | `sources_failed[].message` | string | What went wrong. |
-| `notes` | string[] | Caveats about the prices and the single-room check. |
+| `notes` | string[] | Caveats about the prices and the room evidence. |
 
 ## travel_times
 
@@ -337,7 +325,7 @@ Computes road distance and travel time from each origin to each destination in I
 
 **Compare hotels by travel time**
 
-Compares up to 10 hotels by travel time to a set of labelled places, such as tonight's arrival station, tomorrow's departure airport and attractions. Hotels are hotel_ids from search_hotels (which also supplies their cheapest price) or name + lat/lng. Places are lat+lng, station code, IATA code or place name. Returns, per hotel, the time and distance to every place, total minutes, the cheapest price from the search that found it (with its source, fetch time and dates) and a rank by total minutes. Does not fetch new prices; get_hotel_rates does.
+Compares up to 10 hotels by travel time to a set of labelled places, such as tonight's arrival station, tomorrow's departure airport and attractions. Hotels are hotel_ids from search_hotels (which also supplies their cheapest price) or name + lat/lng. Places are lat+lng, station code, IATA code or place name. Returns, per hotel, the time and distance to every place, total minutes, the price the search that found it ranked it by (one room when known; with its source, fetch time and dates) and a rank by total minutes. Does not fetch new prices; get_hotel_rates does.
 
 ### Input
 
@@ -367,11 +355,11 @@ Compares up to 10 hotels by travel time to a set of labelled places, such as ton
 | `hotels[].name` | string | Hotel name (the coordinates when no name was given). |
 | `hotels[].lat` | number | Hotel latitude. |
 | `hotels[].lng` | number | Hotel longitude. |
-| `hotels[].cheapest` | object \| null | Cheapest price from the search that returned this hotel, for that search's dates and party. |
+| `hotels[].cheapest` | object \| null | Price the search ranked this hotel by (its cheapest one-room price when known), for that search's dates and party. |
 | `hotels[].cheapest.per_night_inr` | number \| null | Per-night price converted to INR (null if no exchange rate). |
 | `hotels[].cheapest.seller` | string | Booking site the price is from; the source id when the source names no seller. |
 | `hotels[].cheapest.source` | string | Id of the data source that returned the price. |
-| `hotels[].cheapest.occupancy` | `"confirmed"` \| `"likely"` \| `"unverified"` \| `"two_rooms"` | How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named; for trivago and Xotelo, under 1.85x their 2-adult price), unverified (the source may quote two rooms for 3+ guests and there is no 2-adult price to compare, or a multi-bedroom unit), two_rooms (about double or more the same source's 2-adult price). |
+| `hotels[].cheapest.fit` | `"one_room"` \| `"two_rooms"` \| `"unknown"` | Whether this price is ONE room for the whole party: one_room (a room name that sleeps the party, or a booking site's rate stated for that many guests; every price for 1–2 guests), two_rooms (a combo or multi-bedroom unit by name, or about exactly double the same booking site's 2-adult price), unknown (not shown to be either; fit_note says what is known). |
 | `hotels[].cheapest.fetched_at` | string | ISO time the source returned this price. |
 | `hotels[].cheapest.check_in` | string | Check-in date of that search, YYYY-MM-DD. |
 | `hotels[].cheapest.check_out` | string | Check-out date of that search, YYYY-MM-DD. |
@@ -455,10 +443,11 @@ Plans where to stay for each stop of a trip in India. Each stay is an arrival (p
 | `stays[].candidates[].lng` | number | Hotel longitude. |
 | `stays[].candidates[].stars` | number \| null | Official hotel class, 1–5 stars (null if unknown). |
 | `stays[].candidates[].rating_10` | number \| null | Guest review score on a 0–10 scale (null if unrated). |
-| `stays[].candidates[].per_night_inr` | number \| null | Cheapest per-night INR price confirmed or likely to be one room, else the cheapest price. |
+| `stays[].candidates[].per_night_inr` | number \| null | Per-night INR price the hotel is ranked by: its cheapest one-room price, else its cheapest price not known to be two rooms, else its cheapest. |
 | `stays[].candidates[].seller` | string \| null | Booking site of per_night_inr; the source id when the source names no seller. |
-| `stays[].candidates[].occupancy` | `"confirmed"` \| `"likely"` \| `"unverified"` \| `"two_rooms"` \| null | How far per_night_inr is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named; for trivago and Xotelo, under 1.85x their 2-adult price), unverified (the source may quote two rooms for 3+ guests and there is no 2-adult price to compare, or a multi-bedroom unit), two_rooms (about double or more the same source's 2-adult price). |
-| `stays[].candidates[].cheaper_unverified_per_night_inr` | number \| null | A cheaper per-night INR price that is unverified as one room, when there is one. |
+| `stays[].candidates[].fit` | `"one_room"` \| `"two_rooms"` \| `"unknown"` \| null | Whether per_night_inr is ONE room for the whole party: one_room (a room name that sleeps the party, or a booking site's rate stated for that many guests; every price for 1–2 guests), two_rooms (a combo or multi-bedroom unit by name, or about exactly double the same booking site's 2-adult price), unknown (not shown to be either; fit_note says what is known). |
+| `stays[].candidates[].room_status` | `"one_room"` \| `"unverified"` \| `"two_rooms_only"` | What the hotel's prices show about one room for the party: one_room (at least one price is one room for the party), two_rooms_only (every price found is two rooms; a room for the party may still exist at a higher price), unverified (otherwise). |
+| `stays[].candidates[].cheaper_other_per_night_inr` | number \| null | A cheaper per-night INR price not known to be one room (possibly two rooms), when there is one. |
 | `stays[].candidates[].minutes_from_arrival` | number \| null | Traffic-adjusted drive from the arrival point, minutes (null when not routed). |
 | `stays[].candidates[].minutes_to_departure` | number \| null | Traffic-adjusted drive to the departure point, minutes (null when not routed). |
 | `stays[].candidates[].leave_by` | string \| null | Latest time to leave the hotel, IST ISO-8601: departure minus drive time and the train or flight buffer. |

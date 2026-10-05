@@ -20,15 +20,23 @@ export interface PriceQuote {
   refundable: boolean | null;
   url: string | null;
   /**
-   * The same source's per-night price (same currency) for 2 adults at this hotel and dates, when the search
-   * fetched it to tell a one-room price for 3–4 guests from a two-room one.
+   * The same booking site's per-night price (same currency, same tax basis) for 2 adults at this hotel and
+   * dates, when it was fetched to tell a one-room price for 3–4 guests from a two-room one.
    */
   two_adult_per_night?: number | null;
   /** Room as the source names it (e.g. "Family Room with 2 Double Beds"), when the source says. */
   room: string | null;
-  /** How far this is known to be ONE room for the whole party (set when results are merged). */
-  occupancy?: "confirmed" | "likely" | "unverified" | "two_rooms";
-  occupancy_note?: string | null;
+  /**
+   * Guests the booking site states this rate is for, where it reports real capacity (Google's room lists for
+   * Booking.com and Agoda); null or absent otherwise.
+   */
+  room_guests?: number | null;
+  /** Guests this price was quoted for, when fewer than the party (a room list fetched for 2 adults). */
+  priced_for_guests?: number;
+  /** Whether this is ONE room for the whole party, on what evidence (set when prices are labelled). */
+  fit?: "one_room" | "two_rooms" | "unknown";
+  fit_basis?: "party_search" | "room_name" | "room_capacity" | "price_ratio" | "none";
+  fit_note?: string | null;
   fetched_at: string;
 }
 

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { cheapestSingleRoom, occupancyLabel } from "../src/core/occupancy.js";
+import { cheapestOneRoom, rankPrice, roomFit } from "../src/core/occupancy.js";
 import type { HotelSearchQuery, PriceQuote } from "../src/core/types.js";
 import { ProviderRegistry } from "../src/providers/registry.js";
 import { createTrivagoProvider, TRIVAGO_INFO } from "../src/providers/trivago.js";
@@ -24,29 +24,42 @@ const quote = (per_night: number, two_adult_per_night: number | null, source = "
   fetched_at: T,
 });
 
-describe("labelling 3–4 guest prices against the 2-adult price", () => {
-  it("labels about double two_rooms, an extra-guest charge likely, and keeps the rest unverified", () => {
-    expect(occupancyLabel(quote(4000, 2000), 4)).toMatchObject({
-      occupancy: "two_rooms",
-      occupancy_note: expect.stringMatching(/^2x trivago's 2-adult price/),
+describe("labelling 3–4 guest prices against the same site's 2-adult price", () => {
+  it("labels about double two_rooms and leaves every other ratio unknown", () => {
+    expect(roomFit(quote(4000, 2000), 4)).toMatchObject({
+      fit: "two_rooms",
+      fit_basis: "price_ratio",
+      fit_note: expect.stringMatching(/^2x Agoda's 2-adult price/),
     });
-    expect(occupancyLabel(quote(9000, 2000), 4).occupancy).toBe("two_rooms"); // implausible as one room
-    expect(occupancyLabel(quote(2800, 2000), 4)).toMatchObject({
-      occupancy: "likely",
-      occupancy_note: expect.stringMatching(/^1.4x/),
+    // Far above double is not proof of two rooms, and an extra-guest charge is not proof of one.
+    expect(roomFit(quote(9000, 2000), 4)).toMatchObject({ fit: "unknown", fit_basis: "price_ratio" });
+    expect(roomFit(quote(2800, 2000), 4)).toMatchObject({
+      fit: "unknown",
+      fit_basis: "price_ratio",
+      fit_note: expect.stringMatching(/this is 1.4x Agoda's 2-adult price/),
     });
-    expect(occupancyLabel(quote(2000, 2000), 4).occupancy_note).toMatch(/two-person room, or a whole unit/);
-    expect(occupancyLabel(quote(2000, 2000), 4).occupancy).toBe("unverified");
-    expect(occupancyLabel(quote(4000, null), 4).occupancy).toBe("unverified");
+    expect(roomFit(quote(2000, 2000), 4)).toMatchObject({ fit: "unknown", fit_basis: "price_ratio" });
+    expect(roomFit(quote(4000, null), 4)).toMatchObject({ fit: "unknown", fit_basis: "none" });
     // Five guests: three rooms would not show as doubling, so no verdict.
-    expect(occupancyLabel(quote(4000, 2000), 5).occupancy).toBe("unverified");
-    expect(occupancyLabel(quote(4000, 2000, "xotelo"), 3).occupancy).toBe("two_rooms");
+    expect(roomFit(quote(4000, 2000), 5)).toMatchObject({ fit: "unknown", fit_basis: "price_ratio" });
+    expect(roomFit(quote(4000, 2000, "xotelo"), 3).fit).toBe("two_rooms");
   });
 
-  it("never picks a two-room price as the cheapest single room", () => {
-    const two = { ...quote(1500, 750), occupancy: "two_rooms" as const };
-    const one = { ...quote(2800, 2000), occupancy: "likely" as const };
-    expect(cheapestSingleRoom([two, one])).toBe(one);
+  it("keeps a 2.6x same-site price unknown: family rooms often cost 2.5x or more", () => {
+    expect(roomFit(quote(5200, 2000), 4)).toMatchObject({
+      fit: "unknown",
+      fit_basis: "price_ratio",
+      fit_note: expect.stringMatching(/2.6x/),
+    });
+  });
+
+  it("never picks a two-room price as the cheapest one room, and ranks by a price not known to be two rooms", () => {
+    const two = { ...quote(1500, 750), fit: "two_rooms" as const };
+    const unknown = { ...quote(2800, 2000), fit: "unknown" as const };
+    const one = { ...quote(3200, null), fit: "one_room" as const };
+    expect(cheapestOneRoom([two, unknown, one])).toBe(one);
+    expect(cheapestOneRoom([two, unknown])).toBeNull();
+    expect(rankPrice([two, unknown])).toBe(unknown);
   });
 });
 
@@ -81,76 +94,83 @@ describe("search_hotels with two-room prices", () => {
     adults: 4,
     sort: "price",
   };
-  const run = async (extra: Record<string, unknown> = {}) => {
+  type Out = {
+    hotels: {
+      name: string;
+      room_status: string;
+      cheapest: { fit: string; fit_basis: string; fit_note: string; per_night_inr: number };
+      rank_price: { per_night_inr: number; fit: string } | null;
+    }[];
+    notes: string[];
+  };
+  const runWith = async (search: () => Promise<unknown[]>, extra: Record<string, unknown> = {}) => {
+    const p = { info: TRIVAGO_INFO, search } as typeof provider;
+    const registry = new ProviderRegistry();
+    registry.register(p.info);
+    const c = await connect(testDeps({ registry, hotelProviders: [p], now: () => new Date(T) }));
+    const r = await c.callTool({ name: "search_hotels", arguments: { ...args, ...extra } });
+    return r.structuredContent as Out;
+  };
+  const run = (extra: Record<string, unknown> = {}) => runWith(provider.search, extra);
+
+  it("keeps a hotel priced only as two rooms, labelled two_rooms_only and sorted after unverified ones", async () => {
+    const sc = await run({ min_rating_pct: 60 });
+    // Hotel doubled is cheaper (₹3,000) but only as two rooms, so it comes after Hotel single (₹3,500).
+    expect(sc.hotels.map((h) => [h.name, h.room_status, h.cheapest.fit])).toEqual([
+      ["Hotel single", "unverified", "unknown"],
+      ["Hotel doubled", "two_rooms_only", "two_rooms"],
+    ]);
+    // The unrated one is left out by the rating floor; nothing is left out for being two rooms.
+    expect(sc.notes.join("\n")).toMatch(
+      /Of 2 hotels, 0 have a price known to be one room for 4, 1 only prices known to be two rooms .*and 1 are unverified/,
+    );
+    expect(sc.notes.join("\n")).not.toMatch(/left out because every price/);
+  });
+
+  it("shows a cheaper two-room price as cheapest, but ranks the hotel by its price not known to be two rooms", async () => {
+    const sc = await runWith(async () => [
+      {
+        ...hotel("mixed", 0.5, 2189, 1095),
+        prices: [quote(2189, 1095), { ...quote(2833, null, "serpapi"), seller: "Google Hotels" }],
+      },
+      hotel("plain", 1, 2500, 2000),
+    ]);
+    expect(sc.hotels.map((h) => h.name)).toEqual(["Hotel plain", "Hotel mixed"]);
+    const h = sc.hotels[1]!;
+    expect(h.cheapest).toMatchObject({ per_night_inr: 2189, fit: "two_rooms", fit_basis: "price_ratio" });
+    expect(h.cheapest.fit_note).toMatch(/^2x Agoda's 2-adult price/);
+    expect(h.room_status).toBe("unverified");
+    // Ranked by the price not known to be two rooms, which the output shows as rank_price.
+    expect(h.rank_price).toMatchObject({ per_night_inr: 2833, fit: "unknown" });
+  });
+
+  it("shows the cheaper unknown price as cheapest when the two-room price is dearer", async () => {
+    const sc = await runWith(async () => [
+      {
+        ...hotel("mixed", 0.5, 4000, 2000),
+        prices: [quote(4000, 2000), { ...quote(2833, null, "serpapi"), seller: "Google Hotels" }],
+      },
+    ]);
+    expect(sc.hotels[0]!.cheapest).toMatchObject({
+      per_night_inr: 2833,
+      fit: "unknown",
+      fit_basis: "party_search",
+    });
+    expect(sc.hotels[0]!.room_status).toBe("unverified");
+  });
+
+  it("no longer offers include_two_room_prices: no hotel is hidden for two-room prices", async () => {
     const registry = new ProviderRegistry();
     registry.register(provider.info);
     const c = await connect(testDeps({ registry, hotelProviders: [provider], now: () => new Date(T) }));
-    const r = await c.callTool({ name: "search_hotels", arguments: { ...args, ...extra } });
-    return r.structuredContent as {
-      hotels: { name: string; cheapest: { occupancy: string; per_night_inr: number } }[];
-      notes: string[];
-    };
-  };
-
-  it("leaves out a hotel priced only as two rooms and says so", async () => {
-    const sc = await run({ min_rating_pct: 60 });
-    expect(sc.hotels.map((h) => h.name)).toEqual(["Hotel single"]);
-    expect(sc.hotels[0]!.cheapest.occupancy).toBe("likely");
-    // The unrated one is left out by the rating floor, not counted as two-room only.
-    expect(sc.notes.join("\n")).toMatch(/1 hotels were left out because every price found was for two rooms/);
-  });
-
-  it("shows a cheaper two-room price it left out next to the price it kept", async () => {
-    const both = {
-      info: TRIVAGO_INFO,
-      search: async () => [
-        {
-          ...hotel("mixed", 0.5, 2189, 1095),
-          prices: [quote(2189, 1095), { ...quote(2833, null, "serpapi"), seller: "Google Hotels" }],
-        },
-      ],
-    };
-    const registry = new ProviderRegistry();
-    registry.register(both.info);
-    const c = await connect(testDeps({ registry, hotelProviders: [both], now: () => new Date(T) }));
-    const r = await c.callTool({ name: "search_hotels", arguments: args });
-    const h = (
-      r.structuredContent as {
-        hotels: Record<string, { per_night_inr: number; occupancy: string; occupancy_note: string }>[];
-      }
-    ).hotels[0]!;
-    expect(h.cheapest!.per_night_inr).toBe(2833);
-    expect(h.two_rooms_left_out).toMatchObject({ per_night_inr: 2189, occupancy: "two_rooms" });
-    expect(h.two_rooms_left_out!.occupancy_note).toMatch(/^2x trivago's 2-adult price/);
-  });
-
-  it("leaves two_rooms_left_out null when the dropped price is not cheaper than the one shown", async () => {
-    const dearer = {
-      info: TRIVAGO_INFO,
-      search: async () => [
-        {
-          ...hotel("mixed", 0.5, 4000, 2000),
-          prices: [quote(4000, 2000), { ...quote(2833, null, "serpapi"), seller: "Google Hotels" }],
-        },
-      ],
-    };
-    const registry = new ProviderRegistry();
-    registry.register(dearer.info);
-    const c = await connect(testDeps({ registry, hotelProviders: [dearer], now: () => new Date(T) }));
-    const r = await c.callTool({ name: "search_hotels", arguments: args });
-    expect(
-      (r.structuredContent as { hotels: { two_rooms_left_out: unknown }[] }).hotels[0]!.two_rooms_left_out,
-    ).toBeNull();
-  });
-
-  it("lists it, labelled, with include_two_room_prices", async () => {
-    const sc = await run({ include_two_room_prices: true, min_rating_pct: 60 });
-    expect(
-      (sc.hotels as unknown as { two_rooms_left_out: unknown }[]).every((h) => h.two_rooms_left_out === null),
-    ).toBe(true);
-    expect(sc.hotels.map((h) => [h.name, h.cheapest.occupancy])).toEqual([
-      ["Hotel doubled", "two_rooms"],
-      ["Hotel single", "likely"],
+    const tools = await c.listTools();
+    const search = tools.tools.find((t) => t.name === "search_hotels")!;
+    expect(Object.keys(search.inputSchema.properties ?? {})).not.toContain("include_two_room_prices");
+    const sc = await run();
+    expect(sc.hotels.map((h) => h.name).sort()).toEqual([
+      "Hotel doubled",
+      "Hotel doubled-unrated",
+      "Hotel single",
     ]);
   });
 });
@@ -185,7 +205,58 @@ describe("sources fetch the 2-adult price for 3–4 guests", () => {
     const out = await createTrivagoProvider(call, () => new Date(T)).searchWithCoverage!(q);
     expect(call.mock.calls.map((c) => c[1].adults)).toEqual([4, 2]);
     expect(out.hotels[0]!.prices[0]).toMatchObject({ per_night: 3000, two_adult_per_night: 1500 });
-    expect(out.coverage_note).toMatch(/2-adult prices found for 1 of 1 priced hotels/);
+    expect(out.coverage_note).toMatch(/same-site 2-adult prices found for 1 of 1 priced hotels/);
+  });
+
+  it("trivago attaches no 2-adult price from a different booking site, so an exact 2.0x stays unknown", async () => {
+    const call = vi.fn(async (_tool: string, args: Record<string, unknown>) => ({
+      structuredContent: {
+        accommodations: [
+          {
+            accommodation_id: "a",
+            accommodation_name: "Hotel A",
+            latitude: 9.97,
+            longitude: 76.291,
+            currency: "INR",
+            price_per_night: args.adults === 2 ? "₹1,500" : "₹3,000",
+            price_per_stay: args.adults === 2 ? "₹1,500" : "₹3,000",
+            advertisers: args.adults === 2 ? "Booking.com" : "Agoda",
+          },
+        ],
+      },
+    }));
+    const out = await createTrivagoProvider(call, () => new Date(T)).searchWithCoverage!(q);
+    const p = out.hotels[0]!.prices[0]!;
+    expect(p).toMatchObject({ seller: "Agoda", per_night: 3000, two_adult_per_night: null });
+    expect(roomFit({ ...p, per_night_inr: 3000 }, 4)).toMatchObject({ fit: "unknown", fit_basis: "none" });
+    expect(out.coverage_note).toMatch(/same-site 2-adult prices found for 0 of 1 priced hotels/);
+  });
+
+  it("trivago counts failed 2-adult points and name lookups in the coverage note", async () => {
+    const call = vi.fn(async (_tool: string, args: Record<string, unknown>) => {
+      if (args.adults === 2) throw new Error("trivago is down");
+      return {
+        structuredContent: {
+          accommodations: [
+            {
+              accommodation_id: "a",
+              accommodation_name: "Hotel A",
+              latitude: 9.97,
+              longitude: 76.291,
+              currency: "INR",
+              price_per_night: "₹3,000",
+              price_per_stay: "₹3,000",
+              advertisers: "Agoda",
+            },
+          ],
+        },
+      };
+    });
+    const out = await createTrivagoProvider(call, () => new Date(T)).searchWithCoverage!(q);
+    expect(out.hotels[0]!.prices[0]!.two_adult_per_night).toBeNull();
+    expect(out.coverage_note).toMatch(
+      /same-site 2-adult prices found for 0 of 1 priced hotels.*\(1 2-adult points failed\) \(1 name lookups failed\)/,
+    );
   });
 
   it("trivago looks a hotel up by name for 2 adults when its area search for 2 adults leaves it out", async () => {
@@ -252,6 +323,45 @@ describe("sources fetch the 2-adult price for 3–4 guests", () => {
     // Same fixture for both, so each seller's 2-adult price equals its party price.
     for (const p of prices) expect(p.two_adult_per_night).toBe(p.per_night);
     expect(out.coverage_note).toMatch(/2-adult prices found for 1 of them/);
+  });
+
+  it("Xotelo attaches a seller's 2-adult price only when both rates state tax the same way", async () => {
+    const rates = (adults: string) => ({
+      error: null,
+      result: {
+        chk_in: "2026-11-10",
+        chk_out: "2026-11-11",
+        currency: "INR",
+        rates:
+          adults === "2"
+            ? [
+                { code: "BookingCom", name: "Booking.com", rate: 1800, tax: 200 },
+                { code: "Agoda", name: "Agoda.com", rate: 1000, tax: null },
+              ]
+            : [
+                { code: "BookingCom", name: "Booking.com", rate: 4000, tax: null },
+                { code: "Agoda", name: "Agoda.com", rate: 2000, tax: null },
+              ],
+      },
+      timestamp: 1791150000000,
+    });
+    const list = JSON.parse(readFileSync(new URL("./fixtures/xotelo-list.json", import.meta.url), "utf8"));
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      return new Response(
+        JSON.stringify(url.pathname.includes("/api/list") ? list : rates(url.searchParams.get("adults")!)),
+      );
+    }) as unknown as typeof fetch;
+    const xotelo = createXotelo({
+      http: { userAgent: "test", fetchImpl, retries: 0 },
+      keys: [{ key: "g9900001", name: "Testpur", lat: 28.61, lng: 77.21, hotels: 3 }],
+      minIntervalMs: 0,
+      ratesForNearest: 1,
+    });
+    const out = await xotelo.searchWithCoverage!({ ...q, lat: 28.6, lng: 77.2, radius_km: 10 });
+    const bySeller = Object.fromEntries(out.hotels[0]!.prices.map((p) => [p.seller, p.two_adult_per_night]));
+    // Booking.com's 2-adult rate adds tax its party rate doesn't state: not comparable.
+    expect(bySeller).toEqual({ "Booking.com": null, "Agoda.com": 1000 });
   });
 
   it("Xotelo books the party's rates before the 2-adult ones, all within the search budget", async () => {

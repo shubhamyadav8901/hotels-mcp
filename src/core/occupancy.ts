@@ -1,28 +1,120 @@
 import type { PriceQuote } from "./types.js";
 
 /**
- * How far a price can be trusted to be for ONE room holding the whole party:
- * - confirmed: the source names a room that fits the party (or it is a normal one/two-person stay it
- *   checked live);
- * - likely: the source searched for the party but does not name the room;
- * - unverified: the source is known to quote two rooms (or nonsense) for larger parties under a
- *   one-room request (trivago, Xotelo; live checks 2026-10-05), and there is no 2-adult price to tell;
- * - two_rooms: about double (or more than) the same source's 2-adult price, so not a one-room price.
+ * Whether a price is for ONE room holding the whole party, and on what evidence. Sources mostly show only
+ * the cheapest offer per booking site, and for 3+ guests that is often two rooms (trivago's price for 4
+ * adults in one room matched its two-room price at every hotel checked, 2026-10-05), while a pricier room
+ * for the party may exist. So a price is called one room or two rooms only on evidence, never by default:
+ * - one_room: a room name that sleeps the party, or a site's rate stated for that many guests;
+ * - two_rooms: a combo or multi-bedroom unit by name, or about exactly double (1.9–2.15x) the same booking
+ *   site's 2-adult price for the hotel;
+ * - unknown: anything else (the note says what is known). For 1–2 guests every price is one room.
  */
-export const OCCUPANCY_LEVELS = ["confirmed", "likely", "unverified", "two_rooms"] as const;
-export type OccupancyLevel = (typeof OCCUPANCY_LEVELS)[number];
+export const ROOM_FITS = ["one_room", "two_rooms", "unknown"] as const;
+export type RoomFitValue = (typeof ROOM_FITS)[number];
+export const FIT_BASES = ["party_search", "room_name", "room_capacity", "price_ratio", "none"] as const;
+export type FitBasis = (typeof FIT_BASES)[number];
 
-/** The levels in one sentence, for tool schemas. */
-export const OCCUPANCY_LEVELS_TEXT =
-  "confirmed (room name says it sleeps the party), likely (searched for the party, room not named; for trivago and Xotelo, under 1.85x their 2-adult price), unverified (the source may quote two rooms for 3+ guests and there is no 2-adult price to compare, or a multi-bedroom unit), two_rooms (about double or more the same source's 2-adult price).";
-
-export interface OccupancyLabel {
-  occupancy: OccupancyLevel;
-  occupancy_note: string | null;
+export interface RoomFit {
+  fit: RoomFitValue;
+  fit_basis: FitBasis;
+  fit_note: string | null;
 }
 
-/** Sources whose prices for more than two guests can be for two rooms although one was asked for. */
-const MULTI_ROOM_RISK = new Set(["trivago", "xotelo"]);
+/** The fit values in one sentence, for tool schemas. */
+export const ROOM_FIT_TEXT =
+  "one_room (a room name that sleeps the party, or a booking site's rate stated for that many guests; every price for 1–2 guests), two_rooms (a combo or multi-bedroom unit by name, or about exactly double the same booking site's 2-adult price), unknown (not shown to be either; fit_note says what is known).";
+export const FIT_BASIS_TEXT =
+  "Evidence for fit: party_search (the source was searched for the party; proves one room only for 1–2 guests), room_name (the room's name), room_capacity (the booking site's stated guest count for the rate), price_ratio (compared with the same booking site's 2-adult price), none.";
+
+/** Sources that show only the cheapest offer per booking site, with no room name. */
+export const CHEAPEST_OFFER_ONLY: ReadonlySet<string> = new Set(["trivago", "xotelo"]);
+/** About exactly double the 2-adult price: the usual sign of two rooms. A family room is often 2.5x or more. */
+const TWO_ROOMS_RATIO = { min: 1.9, max: 2.15 };
+/** Largest party the doubling test can judge: beyond 4, three rooms would not show as doubling. */
+export const RATIO_MAX_GUESTS = 4;
+const COMBO = /\b(combo|combination)\b|\b(2|two)\s*rooms\b|\b\d\s*x\s*rooms?\b/i;
+
+const fitOf = (fit: RoomFitValue, fit_basis: FitBasis, fit_note: string | null): RoomFit => ({
+  fit,
+  fit_basis,
+  fit_note,
+});
+
+export function roomFit(q: PriceQuote, guests: number): RoomFit {
+  if (guests <= 2) return fitOf("one_room", "party_search", null);
+  const room = q.room;
+  const site = q.seller ?? q.source;
+  if (room && COMBO.test(room)) return fitOf("two_rooms", "room_name", `"${room}" is several rooms.`);
+  const bedrooms = room ? bedroomCount(room) : 0;
+  if (bedrooms > 1) {
+    return fitOf("two_rooms", "room_name", `"${room}" is a whole ${bedrooms}-bedroom unit, not one room.`);
+  }
+  if (q.room_guests != null) {
+    return q.room_guests >= guests
+      ? fitOf(
+          "one_room",
+          "room_capacity",
+          `${site} states this rate for ${q.room_guests} guests${room ? ` ("${room}")` : ""}.`,
+        )
+      : fitOf(
+          "unknown",
+          "room_capacity",
+          `${site} states this rate for ${q.room_guests} guests, fewer than ${guests}.`,
+        );
+  }
+  const cap = room ? roomCapacity(room) : null;
+  if (cap !== null && cap >= guests && q.priced_for_guests !== undefined && q.priced_for_guests < guests) {
+    return fitOf(
+      "unknown",
+      "room_name",
+      `"${room}" sleeps ${cap}, but this price is for ${q.priced_for_guests} guests; for ${guests} it may cost more.`,
+    );
+  }
+  if (cap !== null && cap >= guests) return fitOf("one_room", "room_name", `"${room}" sleeps ${cap}.`);
+  if (cap !== null) {
+    return fitOf("unknown", "room_name", `"${room}" sleeps ${cap}; ${guests} guests may need an extra bed.`);
+  }
+  if (CHEAPEST_OFFER_ONLY.has(q.source)) {
+    const base = q.two_adult_per_night ?? null;
+    const ratio = base ? Math.round((q.per_night / base) * 100) / 100 : null;
+    if (
+      ratio !== null &&
+      guests <= RATIO_MAX_GUESTS &&
+      ratio >= TWO_ROOMS_RATIO.min &&
+      ratio <= TWO_ROOMS_RATIO.max
+    ) {
+      return fitOf(
+        "two_rooms",
+        "price_ratio",
+        `${ratio}x ${site}'s 2-adult price for this hotel: the usual sign of two rooms. A room for ${guests} may exist at a higher price.`,
+      );
+    }
+    return fitOf(
+      "unknown",
+      ratio !== null ? "price_ratio" : "none",
+      `${q.source} shows only the cheapest offer per booking site, which for ${guests} guests is often two rooms` +
+        (ratio !== null ? `; this is ${ratio}x ${site}'s 2-adult price.` : "."),
+    );
+  }
+  if (q.source === "hotelscasa") {
+    return fitOf(
+      "unknown",
+      "party_search",
+      room
+        ? `Offered for ${guests} guests as "${room}", which does not say how many it sleeps.`
+        : `Offered for ${guests} guests; the room is not named.`,
+    );
+  }
+  if (q.source === "serpapi") {
+    return fitOf(
+      "unknown",
+      "party_search",
+      `Google lists this hotel for ${guests} guests, but this price names no room and can be a multi-room deal.`,
+    );
+  }
+  return fitOf("unknown", "none", null);
+}
 
 /**
  * How many people a room name says it sleeps, or null when it doesn't say. Only explicit wording counts:
@@ -68,125 +160,42 @@ export function bedroomCount(room: string): number {
   return /^\d+$/.test(m[1]!) ? Number(m[1]) : (NUMBER_WORDS[m[1]!] ?? 0);
 }
 
-export function occupancyLabel(q: PriceQuote, guests: number): OccupancyLabel {
-  if (guests <= 2) {
-    return q.source === "hotelscasa" && q.available === true
-      ? { occupancy: "confirmed", occupancy_note: null }
-      : { occupancy: "likely", occupancy_note: null };
-  }
-  if (MULTI_ROOM_RISK.has(q.source)) {
-    const base = q.two_adult_per_night ?? null;
-    const verdict = singleRoomVerdict(q.per_night, base, guests);
-    const ratio = base ? `${Math.round((q.per_night / base) * 100) / 100}x` : "";
-    if (verdict === "plausible_single_room") {
-      return {
-        occupancy: "likely",
-        occupancy_note: `${ratio} ${q.source}'s 2-adult price for this hotel: an extra-guest charge or a bigger room, plausible as one room.`,
-      };
-    }
-    if (verdict === "looks_like_2_rooms" || verdict === "unusually_high" || verdict === "implausible") {
-      return {
-        occupancy: "two_rooms",
-        occupancy_note: `${ratio} ${q.source}'s 2-adult price for this hotel: priced as two rooms, not one room for ${guests}.`,
-      };
-    }
-    if (verdict === "priced_as_2_adults") {
-      return {
-        occupancy: "unverified",
-        occupancy_note: `Same as ${q.source}'s 2-adult price for this hotel: a two-person room, or a whole unit priced the same for any party; check the listing.`,
-      };
-    }
-    return {
-      occupancy: "unverified",
-      occupancy_note: `${q.source} sometimes prices ${guests} guests as two rooms under a one-room request; get_hotel_rates with check_single_room compares it with the two-adult price.`,
-    };
-  }
-  // A whole multi-bedroom unit (apartment, villa) is several rooms, whatever the source.
-  const bedrooms = q.room ? bedroomCount(q.room) : 0;
-  if (bedrooms > 1) {
-    return {
-      occupancy: "unverified",
-      occupancy_note: `"${q.room}" is a whole ${bedrooms}-bedroom unit, not a single room.`,
-    };
-  }
-  if (q.source === "hotelscasa") {
-    const cap = q.room ? roomCapacity(q.room) : null;
-    if (cap !== null && cap >= guests) return { occupancy: "confirmed", occupancy_note: null };
-    return {
-      occupancy: "likely",
-      occupancy_note: !q.room
-        ? `Offered for ${guests} guests; the room is not named.`
-        : cap !== null
-          ? `Offered for ${guests} guests, but the room name ("${q.room}") suggests it sleeps ${cap}; it may rely on extra beds.`
-          : `Offered for ${guests} guests, but the room name ("${q.room}") does not say how many it sleeps; it may rely on extra beds.`,
-    };
-  }
-  if (q.source === "serpapi") {
-    return {
-      occupancy: "likely",
-      occupancy_note: `Google Hotels searched for ${guests} guests and leaves out hotels that cannot host them; it does not name the room.`,
-    };
-  }
-  return { occupancy: "likely", occupancy_note: null };
-}
+export const ROOM_STATUSES = ["one_room", "unverified", "two_rooms_only"] as const;
+export type RoomStatus = (typeof ROOM_STATUSES)[number];
+export const ROOM_STATUS_TEXT =
+  "one_room (at least one price is one room for the party), two_rooms_only (every price found is two rooms; a room for the party may still exist at a higher price), unverified (otherwise).";
 
-/** Price to rank and filter a hotel by: its cheapest single-room price when it has one, else its cheapest. */
-export function effectivePrice(h: { cheapest: PriceQuote | null; cheapest_single_room: PriceQuote | null }) {
-  return h.cheapest_single_room ?? h.cheapest;
-}
+const bookable = (p: PriceQuote) => p.per_night_inr !== null && p.available !== false;
 
-/** Cheapest price that is confirmed or likely to be for one room holding the party. */
-export function cheapestSingleRoom(prices: PriceQuote[]): PriceQuote | null {
+function cheapestOf(prices: PriceQuote[], keep: (p: PriceQuote) => boolean): PriceQuote | null {
   let best: PriceQuote | null = null;
   for (const p of prices) {
-    if (p.per_night_inr === null || p.available === false) continue;
-    if (p.occupancy === "unverified" || p.occupancy === "two_rooms") continue;
-    if (!best || p.per_night_inr < (best.per_night_inr as number)) best = p;
+    if (!bookable(p) || !keep(p)) continue;
+    if (!best || (p.per_night_inr as number) < (best.per_night_inr as number)) best = p;
   }
   return best;
 }
 
-export type SingleRoomVerdict =
-  | "priced_as_2_adults"
-  | "plausible_single_room"
-  | "looks_like_2_rooms"
-  | "unusually_high"
-  | "implausible"
-  | "unknown";
+/** Cheapest price that is one room for the party. */
+export function cheapestOneRoom(prices: PriceQuote[]): PriceQuote | null {
+  return cheapestOf(prices, (p) => p.fit === "one_room");
+}
 
-export const SINGLE_ROOM_VERDICTS = [
-  "priced_as_2_adults",
-  "plausible_single_room",
-  "looks_like_2_rooms",
-  "unusually_high",
-  "implausible",
-  "unknown",
-] as const;
-
-/** Largest party the doubling test can judge: beyond 4, three or more rooms make the ratio ambiguous. */
-export const VERDICT_MAX_GUESTS = 4;
+/** From every bookable price, converted to INR or not: an unconverted one-room price still counts. */
+export function roomStatus(prices: PriceQuote[]): RoomStatus {
+  const offered = prices.filter((p) => p.available !== false);
+  if (offered.some((p) => p.fit === "one_room")) return "one_room";
+  return offered.length > 0 && offered.every((p) => p.fit === "two_rooms") ? "two_rooms_only" : "unverified";
+}
 
 /**
- * Compares a price for a party of 3–4 with the same seller's two-adult price for the same hotel and dates
- * (bands from live checks, 2026-10-05):
- * - ≤1.1×: the seller ignored the party size, so it is probably a two-person room;
- * - 1.1–1.85×: an extra-guest charge or a bigger room — plausible as one room;
- * - 1.85–2.15×: about double — looks like two rooms;
- * - 2.15–4×: unusually high for one room; check the room type;
- * - ≥4×: not a believable single-room price.
- * Larger parties are not judged: three rooms (~3×) would be ambiguous.
+ * Price a hotel is ranked and filtered by: its cheapest one-room price, else its cheapest price not known to
+ * be two rooms, else its cheapest (two-room) price.
  */
-export function singleRoomVerdict(
-  partyInr: number | null,
-  twoAdultInr: number | null,
-  guests: number,
-): SingleRoomVerdict {
-  if (guests > VERDICT_MAX_GUESTS) return "unknown";
-  if (partyInr === null || twoAdultInr === null || twoAdultInr <= 0) return "unknown";
-  const ratio = partyInr / twoAdultInr;
-  if (ratio >= 4) return "implausible";
-  if (ratio > 2.15) return "unusually_high";
-  if (ratio >= 1.85) return "looks_like_2_rooms";
-  if (ratio <= 1.1) return "priced_as_2_adults";
-  return "plausible_single_room";
+export function rankPrice(prices: PriceQuote[]): PriceQuote | null {
+  return (
+    cheapestOneRoom(prices) ??
+    cheapestOf(prices, (p) => p.fit !== "two_rooms") ??
+    cheapestOf(prices, () => true)
+  );
 }

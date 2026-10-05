@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AppError, upstreamText } from "../core/errors.js";
 import { coverPoints, haversineKm } from "../core/geo.js";
-import { VERDICT_MAX_GUESTS } from "../core/occupancy.js";
+import { RATIO_MAX_GUESTS } from "../core/occupancy.js";
 import type { HotelCandidate, HotelSearchQuery } from "../core/types.js";
 import { parseAmount, parseUpstream } from "./shared.js";
 import type { HotelSearchProvider, ProviderInfo, SearchOutcome } from "./types.js";
@@ -186,7 +186,7 @@ export function createTrivagoProvider(
     // live 2026-10-05), and names no room. The same points searched for 2 adults give each hotel a baseline
     // that tells a one-room price (an extra-guest charge) from a doubled one.
     const guests = q.adults + (q.children_ages?.length ?? 0);
-    const wantsBaseline = guests > 2 && guests <= VERDICT_MAX_GUESTS;
+    const wantsBaseline = guests > 2 && guests <= RATIO_MAX_GUESTS;
     const run = (query: HotelSearchQuery) =>
       Promise.allSettled(points.map((p) => withBudget(searchAround(p, query), pointBudgetMs)));
     const [results, baseResults] = await Promise.all([
@@ -197,16 +197,24 @@ export function createTrivagoProvider(
     if (ok.length === 0) throw (results[0] as PromiseRejectedResult).reason;
     const byId = new Map<string, HotelCandidate>();
     for (const r of ok) for (const h of r.value) if (!byId.has(h.source_id)) byId.set(h.source_id, h);
-    const twoAdult = new Map<string, number>();
-    for (const r of baseResults)
-      if (r.status === "fulfilled")
-        for (const h of r.value)
-          if (h.prices[0] && !twoAdult.has(h.source_id)) twoAdult.set(h.source_id, h.prices[0].per_night);
+    // Each hotel's 2-adult offer, kept with its booking site: trivago shows only the cheapest site, which can
+    // change with the party size, and only the same site's prices compare.
+    const twoAdult = new Map<string, { seller: string | null; per_night: number }>();
+    const keep = (h: HotelCandidate) => {
+      const p = h.prices[0];
+      if (p && !twoAdult.has(h.source_id))
+        twoAdult.set(h.source_id, { seller: p.seller, per_night: p.per_night });
+    };
+    for (const r of baseResults) if (r.status === "fulfilled") r.value.forEach(keep);
+    const basePointsFailed = baseResults.filter((r) => r.status === "rejected").length;
     // The 2-adult search ranks a different ~25 hotels per point, so many hotels miss their baseline. The
     // cheapest of those (the ones a price sort would show first) are looked up by name for 2 adults, in
     // whatever time is left of the point budget.
     const remaining = pointBudgetMs - (Date.now() - started);
-    if (wantsBaseline && remaining >= MIN_LOOKUP_MS) {
+    let lookupsFailed = 0;
+    let lookupsSkipped = false;
+    if (wantsBaseline && remaining < MIN_LOOKUP_MS) lookupsSkipped = true;
+    else if (wantsBaseline) {
       const missing = [...byId.values()]
         .filter((h) => h.prices[0] && !twoAdult.has(h.source_id) && haversineKm(q, h) <= q.radius_km)
         .sort((a, b) => a.prices[0]!.per_night - b.prices[0]!.per_night)
@@ -215,9 +223,11 @@ export function createTrivagoProvider(
       const found = await Promise.allSettled(
         missing.map((h) => withBudget(lookup(h.source_id, h.name, undefined, pair), remaining)),
       );
-      for (const r of found)
-        if (r.status === "fulfilled" && r.value?.prices[0])
-          twoAdult.set(r.value.source_id, r.value.prices[0].per_night);
+      for (const r of found) {
+        if (r.status === "fulfilled") {
+          if (r.value) keep(r.value);
+        } else lookupsFailed++;
+      }
     }
     const hotels = [...byId.values()]
       .filter((h) => haversineKm(q, h) <= q.radius_km)
@@ -225,7 +235,13 @@ export function createTrivagoProvider(
         wantsBaseline
           ? {
               ...h,
-              prices: h.prices.map((p) => ({ ...p, two_adult_per_night: twoAdult.get(h.source_id) ?? null })),
+              prices: h.prices.map((p) => {
+                const base = twoAdult.get(h.source_id);
+                return {
+                  ...p,
+                  two_adult_per_night: base && base.seller === p.seller ? base.per_night : null,
+                };
+              }),
             }
           : h,
       );
@@ -237,7 +253,10 @@ export function createTrivagoProvider(
       coverage_note:
         `about 25 hotels per point searched (trivago has no radius control); searched ${pts}` +
         (wantsBaseline
-          ? `; 2-adult prices found for ${checked} of ${priced.length} priced hotels, to spot two-room prices`
+          ? `; same-site 2-adult prices found for ${checked} of ${priced.length} priced hotels, to spot two-room prices` +
+            (basePointsFailed ? ` (${basePointsFailed} 2-adult points failed)` : "") +
+            (lookupsFailed ? ` (${lookupsFailed} name lookups failed)` : "") +
+            (lookupsSkipped ? " (no time left for name lookups)" : "")
           : ""),
     };
   }

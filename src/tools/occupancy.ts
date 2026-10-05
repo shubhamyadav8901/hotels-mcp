@@ -34,5 +34,5 @@ export function occupancyNote(adults: number, childrenAges: readonly number[]): 
   const xotelo = childrenAges.length
     ? ` Xotelo cannot price children, so its prices are for ${adults + childrenAges.length} adults.`
     : "";
-  return `Prices are for one room for ${adults} adult${adults > 1 ? "s" : ""}${kids}, as quoted by each source for that occupancy.${xotelo}`;
+  return `Every source was asked for one room for ${adults} adult${adults > 1 ? "s" : ""}${kids}; each price's fit says whether it is one room.${xotelo}`;
 }

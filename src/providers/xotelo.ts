@@ -4,7 +4,7 @@ import { gunzipSync } from "node:zlib";
 import { z } from "zod";
 import { AppError, upstreamText } from "../core/errors.js";
 import { haversineKm } from "../core/geo.js";
-import { VERDICT_MAX_GUESTS } from "../core/occupancy.js";
+import { RATIO_MAX_GUESTS } from "../core/occupancy.js";
 import type { HotelCandidate, HotelSearchQuery, LatLng, PriceQuote } from "../core/types.js";
 import { DEFAULT_DATA_DIR } from "../data/datasets.js";
 import { TtlCache } from "../lib/cache.js";
@@ -344,18 +344,24 @@ export function createXotelo(opts: XoteloOptions) {
     }));
   }
 
-  /** Adds each seller's 2-adult price (when it was fetched) to that seller's quote. */
+  /**
+   * Adds each seller's 2-adult price (when it was fetched) to that seller's quote, only when both state tax
+   * the same way: a price with GST against one without would be off by 12–18%.
+   */
   function withBaseline(
     quotes: PriceQuote[],
     base: PromiseSettledResult<RateRow[]> | undefined,
   ): PriceQuote[] {
     if (!base) return quotes;
-    const bySeller = new Map(
-      base.status === "fulfilled"
-        ? base.value.map((r) => [r.name, r.tax === null ? r.rate : r.rate + r.tax])
-        : [],
-    );
-    return quotes.map((q) => ({ ...q, two_adult_per_night: bySeller.get(q.seller ?? "") ?? null }));
+    const bySeller = new Map(base.status === "fulfilled" ? base.value.map((r) => [r.name, r]) : []);
+    return quotes.map((q) => {
+      const r = bySeller.get(q.seller ?? "");
+      const sameTaxBasis = r !== undefined && (r.tax === null) === (q.includes_taxes === null);
+      return {
+        ...q,
+        two_adult_per_night: r && sameTaxBasis ? (r.tax === null ? r.rate : r.rate + r.tax) : null,
+      };
+    });
   }
 
   /** Per-OTA prices for one hotel (`hotel_key` such as `g304551-d495582`; only the `d` part matters). */
@@ -414,9 +420,9 @@ export function createXotelo(opts: XoteloOptions) {
     // For 3–4 guests, each seller's 2-adult price tells a one-room price from a two-room one (Xotelo, like
     // trivago, can price two rooms under rooms=1). Both sets are requested in one pass: throttle slots are
     // booked in call order, so the party's own rates get the earlier ones, and a 2-adult request that can't
-    // start in time is skipped (its prices stay unverified) without delaying them.
+    // start in time is skipped (its prices stay unknown) without delaying them.
     const guests = q.adults + (q.children_ages?.length ?? 0);
-    const wantsBaseline = guests > 2 && guests <= VERDICT_MAX_GUESTS;
+    const wantsBaseline = guests > 2 && guests <= RATIO_MAX_GUESTS;
     const partyRates = priced.map((h) =>
       fetchRates(h.hotelKey, q.check_in, q.check_out, q.adults, q.children_ages, latestStart),
     );

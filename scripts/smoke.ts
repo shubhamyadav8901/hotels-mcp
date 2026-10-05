@@ -4,6 +4,7 @@
  *
  *   HTTP_USER_AGENT="india-hotels-mcp/0.1 (you@example.com)" npm run smoke
  */
+import "../src/net-setup.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { loadConfig } from "../src/config.js";
