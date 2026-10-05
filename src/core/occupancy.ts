@@ -6,9 +6,15 @@ import type { PriceQuote } from "./types.js";
  *   checked live);
  * - likely: the source searched for the party but does not name the room;
  * - unverified: the source is known to quote two rooms (or nonsense) for larger parties under a
- *   one-room request (trivago, Xotelo; live checks 2026-10-05).
+ *   one-room request (trivago, Xotelo; live checks 2026-10-05), and there is no 2-adult price to tell;
+ * - two_rooms: about double (or more than) the same source's 2-adult price, so not a one-room price.
  */
-export type OccupancyLevel = "confirmed" | "likely" | "unverified";
+export const OCCUPANCY_LEVELS = ["confirmed", "likely", "unverified", "two_rooms"] as const;
+export type OccupancyLevel = (typeof OCCUPANCY_LEVELS)[number];
+
+/** The levels in one sentence, for tool schemas. */
+export const OCCUPANCY_LEVELS_TEXT =
+  "confirmed (room name says it sleeps the party), likely (searched for the party, room not named; for trivago and Xotelo, under 1.85x their 2-adult price), unverified (the source may quote two rooms for 3+ guests and there is no 2-adult price to compare, or a multi-bedroom unit), two_rooms (about double or more the same source's 2-adult price).";
 
 export interface OccupancyLabel {
   occupancy: OccupancyLevel;
@@ -69,6 +75,27 @@ export function occupancyLabel(q: PriceQuote, guests: number): OccupancyLabel {
       : { occupancy: "likely", occupancy_note: null };
   }
   if (MULTI_ROOM_RISK.has(q.source)) {
+    const base = q.two_adult_per_night ?? null;
+    const verdict = singleRoomVerdict(q.per_night, base, guests);
+    const ratio = base ? `${Math.round((q.per_night / base) * 100) / 100}x` : "";
+    if (verdict === "plausible_single_room") {
+      return {
+        occupancy: "likely",
+        occupancy_note: `${ratio} ${q.source}'s 2-adult price for this hotel: an extra-guest charge or a bigger room, plausible as one room.`,
+      };
+    }
+    if (verdict === "looks_like_2_rooms" || verdict === "unusually_high" || verdict === "implausible") {
+      return {
+        occupancy: "two_rooms",
+        occupancy_note: `${ratio} ${q.source}'s 2-adult price for this hotel: priced as two rooms, not one room for ${guests}.`,
+      };
+    }
+    if (verdict === "priced_as_2_adults") {
+      return {
+        occupancy: "unverified",
+        occupancy_note: `Same as ${q.source}'s 2-adult price for this hotel: a two-person room, or a whole unit priced the same for any party; check the listing.`,
+      };
+    }
     return {
       occupancy: "unverified",
       occupancy_note: `${q.source} sometimes prices ${guests} guests as two rooms under a one-room request; get_hotel_rates with check_single_room compares it with the two-adult price.`,
@@ -112,7 +139,8 @@ export function effectivePrice(h: { cheapest: PriceQuote | null; cheapest_single
 export function cheapestSingleRoom(prices: PriceQuote[]): PriceQuote | null {
   let best: PriceQuote | null = null;
   for (const p of prices) {
-    if (p.per_night_inr === null || p.available === false || p.occupancy === "unverified") continue;
+    if (p.per_night_inr === null || p.available === false) continue;
+    if (p.occupancy === "unverified" || p.occupancy === "two_rooms") continue;
     if (!best || p.per_night_inr < (best.per_night_inr as number)) best = p;
   }
   return best;

@@ -4,6 +4,7 @@ import type { Gazetteer } from "../core/anchors.js";
 import { AppError } from "../core/errors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
 import { cheapest } from "../core/merge.js";
+import { OCCUPANCY_LEVELS, OCCUPANCY_LEVELS_TEXT } from "../core/occupancy.js";
 import { travelMatrix, type LabelledPoint, type TravelDeps } from "../core/travel.js";
 import { handle, readOnly } from "./common.js";
 import { PointInput } from "./points.js";
@@ -129,9 +130,9 @@ export function registerTravelTools(
                     ),
                   source: z.string().describe("Id of the data source that returned the price."),
                   occupancy: z
-                    .enum(["confirmed", "likely", "unverified"])
+                    .enum(OCCUPANCY_LEVELS)
                     .describe(
-                      "How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named), unverified (source may quote two rooms for 3+ guests, or a multi-bedroom unit).",
+                      `How far this price is known to be ONE room for the whole party: ${OCCUPANCY_LEVELS_TEXT}`,
                     ),
                   fetched_at: z.string().describe("ISO time the source returned this price."),
                   check_in: z.string().describe("Check-in date of that search, YYYY-MM-DD."),

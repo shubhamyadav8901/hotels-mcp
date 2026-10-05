@@ -5,6 +5,7 @@ import { AppError } from "../core/errors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
 import type { HotelSearchDeps } from "../core/hotel-search.js";
 import { planStay, type StayRequest } from "../core/itinerary.js";
+import { OCCUPANCY_LEVELS, OCCUPANCY_LEVELS_TEXT } from "../core/occupancy.js";
 import {
   RETIRING_ROOM_INDICATIVE_PRICES,
   RETIRING_ROOM_PORTAL,
@@ -156,10 +157,10 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
                         "Booking site of per_night_inr; the source id when the source names no seller.",
                       ),
                     occupancy: z
-                      .enum(["confirmed", "likely", "unverified"])
+                      .enum(OCCUPANCY_LEVELS)
                       .nullable()
                       .describe(
-                        "How far per_night_inr is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named), unverified (source may quote two rooms for 3+ guests, or a multi-bedroom unit).",
+                        `How far per_night_inr is known to be ONE room for the whole party: ${OCCUPANCY_LEVELS_TEXT}`,
                       ),
                     cheaper_unverified_per_night_inr: z
                       .number()

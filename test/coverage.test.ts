@@ -45,6 +45,8 @@ describe("trivago across a wide radius", () => {
   it("searches every grid point, merges by id, keeps hotels inside the radius and tolerates a failed point", async () => {
     let n = 0;
     const call = vi.fn(async (_tool: string, args: Record<string, unknown>) => {
+      // 2-adult baselines, by area and by name
+      if (args.adults === 2) return { structuredContent: { accommodations: [] } };
       n++;
       if (n === 3) throw new Error("trivago hiccup");
       const lat = args.latitude as number,
@@ -61,7 +63,12 @@ describe("trivago across a wide radius", () => {
       };
     });
     const out = await createTrivagoProvider(call, NOW).searchWithCoverage!(q(10));
-    expect(call).toHaveBeenCalledTimes(13);
+    // 13 points for the party, and the same 13 for 2 adults to spot two-room prices.
+    expect(call.mock.calls.filter((c) => c[1].adults === 4)).toHaveLength(13);
+    const twoAdult = call.mock.calls.filter((c) => c[1].adults === 2);
+    expect(twoAdult.filter((c) => c[0] === "trivago-accommodation-radius-search")).toHaveLength(13);
+    // No baseline came back, so the 15 cheapest are looked up by name.
+    expect(twoAdult.filter((c) => c[0] === "trivago-accommodation-search")).toHaveLength(13);
     const ids = out.hotels.map((h) => h.source_id);
     expect(ids.filter((i) => i === "shared")).toHaveLength(1);
     expect(ids).not.toContain("far");
@@ -71,7 +78,7 @@ describe("trivago across a wide radius", () => {
 
   it("uses one point for a small radius", async () => {
     const call = vi.fn(async () => ({ structuredContent: { accommodations: [acc("a", 9.97, 76.291)] } }));
-    const out = await createTrivagoProvider(call, NOW).searchWithCoverage!(q(2));
+    const out = await createTrivagoProvider(call, NOW).searchWithCoverage!({ ...q(2), adults: 2 });
     expect(call).toHaveBeenCalledTimes(1);
     expect(out.coverage_note).toMatch(/searched 1 point/);
   });

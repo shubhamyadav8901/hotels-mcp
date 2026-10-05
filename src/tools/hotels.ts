@@ -4,6 +4,7 @@ import { AppError, toAppError } from "../core/errors.js";
 import { searchPlaceName, type Anchor, type Gazetteer } from "../core/anchors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
 import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/hotel-search.js";
+import { OCCUPANCY_LEVELS, OCCUPANCY_LEVELS_TEXT } from "../core/occupancy.js";
 import { travelMatrix, type TravelDeps } from "../core/travel.js";
 import type { PriceQuote } from "../core/types.js";
 import { handle, readOnly } from "./common.js";
@@ -43,10 +44,8 @@ const PriceOut = z.object({
   url: z.string().nullable().describe("Link to the offer or hotel page at the source, when given."),
   room: z.string().nullable().describe("Room type as the source names it (null when it does not say)."),
   occupancy: z
-    .enum(["confirmed", "likely", "unverified"])
-    .describe(
-      "How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named), unverified (source may quote two rooms for 3+ guests, or a multi-bedroom unit).",
-    ),
+    .enum(OCCUPANCY_LEVELS)
+    .describe(`How far this price is known to be ONE room for the whole party: ${OCCUPANCY_LEVELS_TEXT}`),
   occupancy_note: z
     .string()
     .nullable()
@@ -189,8 +188,10 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         "IATA code, or a place name. Returns each hotel's id, coordinates, straight-line distance, stars, " +
         "guest rating and cheapest current price in INR (with original currency, seller, source and, where the " +
         "source names it, the room type). Every search is for one room that fits the party; each price says " +
-        "how far that is established (occupancy: confirmed, likely or unverified), and when the cheapest " +
-        "price is unverified, cheapest_single_room gives the cheapest that is not. With " +
+        "how far that is established (occupancy: confirmed, likely, unverified or two_rooms). For 3–4 guests, " +
+        "trivago and Xotelo prices are compared with their own 2-adult prices; hotels priced only as two rooms " +
+        "are left out unless include_two_room_prices is set. When the cheapest price is unverified, " +
+        "cheapest_single_room gives the cheapest that is not. With " +
         "max_drive_minutes, keeps only hotels within that drive time (OpenStreetMap routing with a traffic " +
         "allowance) and adds drive_minutes. Results are paginated. Per-seller prices are in get_hotel_rates; " +
         "times to other places are in compare_hotels. coverage reports what each source returned and what limited it " +
@@ -219,6 +220,12 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
           .default(false)
           .describe(
             "Also list hotels with no live price (OpenStreetMap listings), for places with thin price coverage.",
+          ),
+        include_two_room_prices: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Also keep prices labelled two_rooms (3–4 guests priced about double the same source's 2-adult price).",
           ),
         max_drive_minutes: z
           .number()
@@ -274,6 +281,7 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         min_stars: a.min_stars,
         min_rating_10: pctTo10(a.min_rating_pct),
         include_unpriced: true,
+        include_two_room_prices: a.include_two_room_prices,
       });
       const notes = [
         "Each source returns a limited set (see coverage), so this is not every hotel in the radius; hotels a source did not return are missing, not unavailable.",
@@ -314,6 +322,11 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
       if (r.unrated_hidden > 0) {
         notes.push(
           `${r.unrated_hidden} hotels were left out by min_rating_pct because no source rates them.`,
+        );
+      }
+      if (r.two_rooms_hidden > 0) {
+        notes.push(
+          `${r.two_rooms_hidden} hotels were left out because every price found was for two rooms (about double the same source's 2-adult price); set include_two_room_prices=true to list them.`,
         );
       }
       if (r.sources_ok.includes("osm_lodging")) {

@@ -19,10 +19,15 @@ export interface PriceQuote {
   available: boolean | null;
   refundable: boolean | null;
   url: string | null;
+  /**
+   * The same source's per-night price (same currency) for 2 adults at this hotel and dates, when the search
+   * fetched it to tell a one-room price for 3–4 guests from a two-room one.
+   */
+  two_adult_per_night?: number | null;
   /** Room as the source names it (e.g. "Family Room with 2 Double Beds"), when the source says. */
   room: string | null;
   /** How far this is known to be ONE room for the whole party (set when results are merged). */
-  occupancy?: "confirmed" | "likely" | "unverified";
+  occupancy?: "confirmed" | "likely" | "unverified" | "two_rooms";
   occupancy_note?: string | null;
   fetched_at: string;
 }

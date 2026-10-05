@@ -158,18 +158,22 @@ it per request ("at least 80%" → `80`, "include unrated hotels" → `0`). Whil
 are left out, and the notes say how many.
 
 One room, really? Each price carries `occupancy`: `confirmed` (the source names a room that sleeps the party,
-e.g. a HotelsCasa "Family Room"), `likely` (the source searched for the party but names no room, e.g. Google), or
-`unverified`. Live checks found trivago and Xotelo sometimes quote **two rooms** (about exactly double the 2-adult
-price) for 3+ guests under a one-room request, so their prices for larger parties are `unverified`. When a
-hotel's cheapest price is unverified, `cheapest_single_room` gives its cheapest confirmed-or-likely price, and
-`get_hotel_rates` with `check_single_room: true` re-prices the unverified sources for 2 adults and gives each
-price a verdict from its ratio to the same seller's 2-adult price: `priced_as_2_adults` (≤1.1×, probably a
-two-person room), `plausible_single_room` (1.1–1.85×), `looks_like_2_rooms` (1.85–2.15×), `unusually_high`
-(2.15–4×), `implausible` (≥4×) or `unknown` (no 2-adult price, or a party over 4). When trivago's area search leaves
-a hotel out, trivago is asked for it by name (accepted only if trivago returns the same hotel id); if the hotel
-still can't be found live, the prices the search returned for the same stay and party are used. Sorting by price, `max_price_inr`
-and `plan_stays` scoring use a hotel's cheapest single-room price when it has one. An agent can search broadly
-and check only its shortlist (each check takes one extra search of trivago and Xotelo, ~15–25 s).
+e.g. a HotelsCasa "Family Room"), `likely` (the source searched for the party but names no room, e.g. Google),
+`unverified` or `two_rooms`. trivago and Xotelo name no room, and live checks found that for 3–4 guests they
+often price **two rooms** under a one-room request: trivago's 4-adult price matched its explicit 2-room price at
+every hotel compared (2.0–2.26× the 2-adult price). So for 3–4 guests `search_hotels` also asks them for 2
+adults and compares each hotel's price with that 2-adult price (same source, or for Xotelo the same seller):
+under 1.1× stays `unverified` (a two-person room, or a whole unit priced the same for any party), 1.1–1.85× is `likely` (an extra-guest charge or a
+bigger room), and 1.85× or more is `two_rooms`. Prices with no 2-adult price to compare stay `unverified`.
+Hotels priced only as two rooms are left out (the notes say how many); `include_two_room_prices: true` lists
+them, labelled. When a hotel's cheapest price is not one room, `cheapest_single_room` gives its cheapest
+confirmed-or-likely price; sorting by price, `max_price_inr` and `plan_stays` scoring use that. For hotels the
+search could not check, `get_hotel_rates` with `check_single_room: true` re-prices the unverified sources for 2
+adults and gives each price a verdict: `priced_as_2_adults` (≤1.1×), `plausible_single_room` (1.1–1.85×),
+`looks_like_2_rooms` (1.85–2.15×), `unusually_high` (2.15–4×), `implausible` (≥4×) or `unknown` (no 2-adult
+price, or a party over 4). When trivago's area search leaves a hotel out, trivago is asked for it by name
+(accepted only if trivago returns the same hotel id); if the hotel still can't be found live, the prices the
+search returned for the same stay and party are used.
 
 Beds: no source can filter by bed type. Where the source names the room (HotelsCasa), each price carries it in
 `room` (e.g. "Family Room", "Comfort Quadruple Room", or "Deluxe Double Room" with extra beds), so check it

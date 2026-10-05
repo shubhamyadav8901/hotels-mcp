@@ -9,7 +9,7 @@ import {
   type RetiringRooms,
   type RetiringRoomStation,
 } from "./retiring.js";
-import { effectivePrice } from "./occupancy.js";
+import { effectivePrice, type OccupancyLevel } from "./occupancy.js";
 import { addDays, istClock, istDate, istIso } from "./time.js";
 import { travelMatrix, type TravelDeps } from "./travel.js";
 
@@ -44,7 +44,7 @@ export interface StayCandidate {
   per_night_inr: number | null;
   seller: string | null;
   /** How far per_night_inr is known to be one room for the party (see search_hotels). */
-  occupancy: "confirmed" | "likely" | "unverified" | null;
+  occupancy: OccupancyLevel | null;
   /** A cheaper price that is unverified as one room (possibly two rooms), when there is one. */
   cheaper_unverified_per_night_inr: number | null;
   minutes_from_arrival: number | null;

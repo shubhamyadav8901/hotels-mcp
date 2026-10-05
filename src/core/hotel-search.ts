@@ -16,6 +16,8 @@ export interface SearchOptions {
   min_rating_10?: number | undefined;
   /** Keep hotels with no live price (e.g. OpenStreetMap-only listings). */
   include_unpriced?: boolean | undefined;
+  /** Keep prices labelled two_rooms (about double the 2-adult price); left out by default. */
+  include_two_room_prices?: boolean | undefined;
   sort: SortKey;
 }
 
@@ -39,6 +41,8 @@ export interface HotelSearchResult {
   unpriced_hidden: number;
   /** Hotels left out by min_rating_10 because no source rates them. */
   unrated_hidden: number;
+  /** Hotels left out because every live price they had was for two rooms (unless include_two_room_prices). */
+  two_rooms_hidden: number;
   sources_ok: string[];
   sources_failed: SourceFailure[];
   /** What each answering source contributed, and what limited it (sources return limited pages). */
@@ -111,7 +115,18 @@ export async function searchHotels(
     sources_failed,
     q.adults + (q.children_ages?.length ?? 0),
   );
-  let hotels: RankedHotel[] = mergeCandidates(converted)
+  // A two-room price is no answer for one room, so it is dropped. A hotel priced only that way keeps its
+  // prices through the filters below (as it would with include_two_room_prices) and is counted and dropped
+  // at the end, so the count is what include_two_room_prices would add.
+  const twoRoomsOnly = new Set<string>();
+  const merged = mergeCandidates(converted).map((h) => {
+    if (opts.include_two_room_prices || !h.prices.some((p) => p.occupancy === "two_rooms")) return h;
+    const prices = h.prices.filter((p) => p.occupancy !== "two_rooms");
+    if (prices.length > 0) return { ...h, prices };
+    twoRoomsOnly.add(h.hotel_id);
+    return h;
+  });
+  let hotels: RankedHotel[] = merged
     .map((h) => ({
       ...h,
       distance_km: roundTo(haversineKm(q, h), 2),
@@ -139,6 +154,8 @@ export async function searchHotels(
     const min = opts.min_stars;
     hotels = hotels.filter((h) => (h.stars ?? 0) >= min);
   }
+  const two_rooms_hidden = hotels.filter((h) => twoRoomsOnly.has(h.hotel_id)).length;
+  hotels = hotels.filter((h) => !twoRoomsOnly.has(h.hotel_id));
   let unpriced_hidden = 0;
   if (!opts.include_unpriced) {
     const priced = hotels.filter((h) => h.cheapest !== null);
@@ -151,6 +168,7 @@ export async function searchHotels(
     hotels,
     unpriced_hidden,
     unrated_hidden,
+    two_rooms_hidden,
     sources_ok,
     sources_failed,
     coverage,

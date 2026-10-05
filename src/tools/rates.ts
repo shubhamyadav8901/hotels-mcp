@@ -12,6 +12,8 @@ import {
 import { cheapest, isSameHotel, nameSimilarity } from "../core/merge.js";
 import {
   cheapestSingleRoom,
+  OCCUPANCY_LEVELS,
+  OCCUPANCY_LEVELS_TEXT,
   occupancyLabel,
   SINGLE_ROOM_VERDICTS,
   singleRoomVerdict,
@@ -57,10 +59,8 @@ const QuoteOut = z.object({
   url: z.string().nullable().describe("Link to the offer or hotel page at the source, when given."),
   room: z.string().nullable().describe("Room type as the source names it (null when it does not say)."),
   occupancy: z
-    .enum(["confirmed", "likely", "unverified"])
-    .describe(
-      "How far this price is known to be ONE room for the whole party: confirmed (room name says it sleeps the party), likely (searched for the party, room not named), unverified (source may quote two rooms for 3+ guests, or a multi-bedroom unit).",
-    ),
+    .enum(OCCUPANCY_LEVELS)
+    .describe(`How far this price is known to be ONE room for the whole party: ${OCCUPANCY_LEVELS_TEXT}`),
   occupancy_note: z
     .string()
     .nullable()
@@ -245,7 +245,8 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           hotel_name: target.name,
           place: deps.gazetteer.nearby(target).stations[0]?.name,
         },
-        { sort: "distance", include_unpriced: true },
+        // Every price is shown here, two-room ones labelled.
+        { sort: "distance", include_unpriced: true, include_two_room_prices: true },
       );
       // Same listing by id, else the nearest listing that looks like the same property.
       let match: RankedHotel | undefined =
