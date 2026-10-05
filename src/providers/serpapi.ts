@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AppError } from "../core/errors.js";
+import { AppError, upstreamText } from "../core/errors.js";
 import { haversineKm } from "../core/geo.js";
 import type { HotelCandidate, HotelSearchQuery, PriceQuote } from "../core/types.js";
 import { TtlCache } from "../lib/cache.js";
@@ -126,9 +126,9 @@ export function createSerpApi(opts: SerpApiOptions) {
         if (/hasn't returned any results|no results/i.test(payload.error)) return { props: [], fetchedAt };
         if (/run out of searches|plan.*limit/i.test(payload.error)) {
           used = monthlyQuota;
-          throw new AppError("QUOTA_EXHAUSTED", `SerpApi: ${payload.error}`);
+          throw new AppError("QUOTA_EXHAUSTED", `SerpApi: ${upstreamText(payload.error)}`);
         }
-        throw new AppError("UPSTREAM_UNAVAILABLE", `SerpApi: ${payload.error}`);
+        throw new AppError("UPSTREAM_UNAVAILABLE", `SerpApi: ${upstreamText(payload.error)}`);
       }
       return { props: payload.properties ?? [], fetchedAt };
     });

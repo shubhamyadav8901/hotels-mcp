@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AppError } from "../core/errors.js";
+import { AppError, upstreamText } from "../core/errors.js";
 import { TtlCache } from "../lib/cache.js";
 import { getJson, type HttpOptions } from "../lib/http.js";
 import { parseUpstream } from "./shared.js";
@@ -45,6 +45,7 @@ export function createFx(http: HttpOptions) {
 
 export function convertToInr(amount: number, currency: string, fx: FxRates): number {
   const rate = fx.toInr[currency.toUpperCase()];
-  if (rate === undefined) throw new AppError("NOT_FOUND", `No exchange rate for ${currency}`);
+  if (rate === undefined)
+    throw new AppError("NOT_FOUND", `No exchange rate for ${upstreamText(currency, 12)}`);
   return Math.round(amount * rate);
 }

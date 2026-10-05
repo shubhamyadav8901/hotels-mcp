@@ -139,3 +139,20 @@ describe("unofficial sources", () => {
     expect(loadConfig({ ENABLE_UNOFFICIAL_SOURCES: "true" }).ENABLE_UNOFFICIAL_SOURCES).toBe(true);
   });
 });
+
+describe("upstreamText", () => {
+  it("flattens control characters and newlines and truncates", async () => {
+    const { upstreamText } = await import("../src/core/errors.js");
+    expect(upstreamText("a\n\tb\u0007  c")).toBe("a b c");
+    expect(upstreamText("y".repeat(300), 20)).toHaveLength(20);
+    expect(upstreamText(null)).toBe("");
+  });
+
+  it("classifies programming errors as INTERNAL_ERROR, not an upstream outage", async () => {
+    const { toAppError } = await import("../src/core/errors.js");
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(toAppError(new TypeError("x is undefined")).code).toBe("INTERNAL_ERROR");
+    expect(toAppError(new Error("socket hang up")).code).toBe("UPSTREAM_UNAVAILABLE");
+    spy.mockRestore();
+  });
+});
