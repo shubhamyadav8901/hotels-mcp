@@ -60,7 +60,7 @@ to you first (see [DISCLAIMER.md](DISCLAIMER.md)).
 
 ```bash
 git clone https://github.com/shubhamyadav8901/hotels-mcp.git && cd hotels-mcp
-cp .env.example .env                # set HTTP_USER_AGENT (app name + contact, Nominatim policy)
+cp .env.example .env                # optional settings; see Configuration
 docker compose up -d --build        # http://localhost:3001/mcp
 curl -s localhost:3001/healthz      # {"status":"ok",...}
 ```

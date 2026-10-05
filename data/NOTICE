@@ -14,7 +14,9 @@ retiring_rooms.json.gz
 airports.json.gz
   From OurAirports (https://ourairports.com/data/), released into the public domain.
 
-xotelo_keys.json.gz (when present)
-  Location keys and centres derived from Xotelo API responses (https://xotelo.com).
+xotelo_keys.json.gz
+  TripAdvisor location IDs, place names, approximate centres (averaged from hotel coordinates)
+  and hotel counts, derived from Xotelo API responses (https://xotelo.com). No prices, reviews,
+  descriptions or other content. Used only when ENABLE_UNOFFICIAL_SOURCES=true.
 
 Rebuild with `npm run build:data` (see README). Build dates and row counts are in manifest.json.

@@ -4,7 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
-Planned as 0.1.0, the first public release.
+## [0.1.0] - 2026-10-05
+
+The first public release.
 
 ### Added
 
@@ -26,4 +28,5 @@ Planned as 0.1.0, the first public release.
 - **Bundled data:** OpenStreetMap snapshots of ~9.2k railway stations with codes, ~5.3k bus stations and ~24k lodging places (ODbL), 151 Indian airports from OurAirports (public domain), and IRCTC's public retiring-room station list (356 stations). Rebuilt with `npm run build:data`; the IRCTC list only with the manual `--with-irctc` flag.
 - **Packaging and checks:** Dockerfile and docker compose for local use, unit and MCP protocol tests on synthetic fixtures, and a live acceptance smoke test (`npm run smoke`).
 
-[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/commits/main
+[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/shubhamyadav8901/hotels-mcp/releases/tag/v0.1.0

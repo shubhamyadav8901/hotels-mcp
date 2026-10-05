@@ -235,7 +235,7 @@ The OSM-derived files are stations, bus_stations, lodging, and the coordinates i
    - Stations: drop metro, monorail and light rail; validate codes against `^[A-Z]{2,5}$`; dedupe by code, preferring the node; apply the alias table.
    - Lodging: drop unnamed rows; apply the student-hostel filter; set brand from `brand` or from a name regex (OYO, Treebo, FabHotel, Zostel, ...).
 4. **Airports.** Download the OurAirports CSV and apply the filter above.
-5. **Retiring rooms.** Read the IRCTC list from a committed raw copy (`data/raw/irctc_listOfStations.json`, refreshed by hand) and join on station code.
+5. **Retiring rooms.** Fetch the IRCTC list once per manual refresh (`npm run build:data -- --with-irctc`) and join on station code. (As built, only the joined `data/retiring_rooms.json.gz` is committed; no raw copy.)
 6. **Write output.** Write gz files with a header `{source, license, osm_base, built_at, count}`. Add `data/LICENSE` and `data/NOTICE`.
 
 The expected wall time is under 5 minutes, with about 3 Overpass requests per build.

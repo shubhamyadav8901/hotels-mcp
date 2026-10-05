@@ -13,7 +13,7 @@
 - `data/stations.json.gz`, `data/bus_stations.json.gz` and `data/lodging.json.gz` are derived from OpenStreetMap, © OpenStreetMap contributors, and are available under the [Open Database License 1.0](https://opendatacommons.org/licenses/odbl/1-0/) (see `data/LICENSE`).
 - `data/airports.json.gz` is derived from [OurAirports](https://ourairports.com/data/), released into the public domain.
 - `data/retiring_rooms.json.gz` is derived from IRCTC's public retiring-room station list. Only the station code, name and operator are kept (contact details are dropped), and coordinates are joined from the OpenStreetMap stations. The list is refreshed manually only (`npm run build:data -- --with-irctc`); IRCTC's terms forbid automated access, so it is never fetched on a schedule.
-- `data/xotelo_keys.json.gz` holds location keys and centres derived from Xotelo API responses. It is used only when unofficial sources are enabled.
+- `data/xotelo_keys.json.gz` holds only TripAdvisor location IDs, place names, approximate centres (averaged from hotel coordinates) and hotel counts, derived from Xotelo API responses; it contains no prices, reviews, descriptions or other content. It is used only when unofficial sources are enabled; delete it, or ask for removal by opening an issue, if you represent Xotelo or TripAdvisor.
 
 If you represent any of these organisations and want something changed or removed, please open an issue.
 

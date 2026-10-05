@@ -16,7 +16,10 @@ const optionalString = z
   .transform((v) => (v && v.trim() ? v.trim() : undefined));
 
 const ConfigSchema = z.object({
-  HTTP_USER_AGENT: z.string().default("india-hotels-mcp/0.1"),
+  /** Sent to every upstream; Nominatim's policy asks for an identifying app name. Add your contact for heavy use. */
+  HTTP_USER_AGENT: z
+    .string()
+    .default("india-hotels-mcp/0.1 (+https://github.com/shubhamyadav8901/hotels-mcp)"),
   SERPAPI_KEY: optionalString,
   PROVIDERS_DISABLED: csv,
   /** Unofficial third-party endpoints (currently Xotelo) run only when this is true. */

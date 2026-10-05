@@ -68,8 +68,8 @@ Results:
   - Chennai: 3678
   - Kerala: 3084
 
-Wikidata can only serve as a cross-check. The sample is in `xotelo_cities_sample.json`, which holds the
-12 Wikidata rows and 38 harvested rows (50 rows in total).
+Wikidata can only serve as a cross-check. (The 50-row sample of Wikidata and harvested rows used here was
+not kept, because it was raw third-party API output; `scripts/build-xotelo-keys.ts` regenerates the full table.)
 
 ## 3. Measurements (Delhi, 2026-11-10 → 11, INR)
 
@@ -135,6 +135,5 @@ and coverage of OYO and Fab properties is thin.
 
 ## Files
 
-- `research/spikes/xotelo_cities_sample.json`: 12 Wikidata rows and 38 harvested rows.
 - `test/fixtures/xotelo-list.json`, `test/fixtures/xotelo-rates.json`: synthetic data in the exact live shapes.
   They include a null `price_ranges`, and a `url` geo that differs from the `key` prefix.

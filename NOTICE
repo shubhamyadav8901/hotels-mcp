@@ -13,8 +13,9 @@ Bundled data (see data/NOTICE, data/LICENSE and DISCLAIMER.md for details):
 - data/retiring_rooms.json.gz is derived from IRCTC's public retiring-room
   station list (station code, name and operator only), with coordinates from
   the OpenStreetMap data above (ODbL 1.0).
-- data/xotelo_keys.json.gz holds location keys derived from Xotelo API
-  responses (https://xotelo.com).
+- data/xotelo_keys.json.gz holds only TripAdvisor location IDs, place names,
+  approximate centres and hotel counts, derived from Xotelo API responses
+  (https://xotelo.com); no prices, reviews or other content.
 
 Data fetched at run time:
 - Geocoding results from Photon and Nominatim and routes from OSRM are based on
