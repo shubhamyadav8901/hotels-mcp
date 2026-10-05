@@ -28,8 +28,10 @@ export function validateOccupancy(adults: number, childrenAges: readonly number[
 }
 
 export function occupancyNote(adults: number, childrenAges: readonly number[]): string {
-  const xotelo = childrenAges.length
-    ? ` Xotelo cannot price children, so its prices are for ${adults + childrenAges.length} adults.`
+  // Both checked live, 2026-10-06: Xotelo returns nothing when children are sent, and trivago accepts the ages
+  // but prices every child as 6 years old (its links read rc-1-2-6-6 for ages 5 and 9, or 10 and 12).
+  const children = childrenAges.length
+    ? ` Xotelo cannot price children, so its prices are for ${adults + childrenAges.length} adults; trivago prices every child as age 6, whatever ages are given.`
     : "";
-  return `Prices are each source's offer for this party; the room is the source's choice, so check it on the booking site.${xotelo}`;
+  return `Prices are each source's offer for this party; the room is the source's choice, so check it on the booking site.${children}`;
 }

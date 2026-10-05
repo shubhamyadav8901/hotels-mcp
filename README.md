@@ -141,7 +141,7 @@ image) and `ALLOWED_HOSTS` (comma-separated extra hostnames accepted in the `Hos
 
 Searches are for the party given by `adults` (1–8) plus `children_ages` (up to 4 children, ages 0–17), at most 8
 guests, in one room: every source is asked for that occupancy, and each quotes the offer it chooses (the room is the
-source's choice, so check it on the booking site). Xotelo cannot price children, so it counts them as adults. With `sort=price`, Google Hotels and
+source's choice, so check it on the booking site). Xotelo cannot price children, so it counts them as adults, and trivago prices every child as age 6 whatever ages are given. With `sort=price`, Google Hotels and
 HotelsCasa return their cheapest results rather than their most relevant ones. `min_stars` (and, for Google,
 `max_price_inr`) is also applied by those sources on their own price basis, before results are merged. A town or city name (`place:
 "Jaipur"`) searches the town, not its main station.
