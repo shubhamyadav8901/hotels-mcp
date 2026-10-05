@@ -40,7 +40,10 @@ function mockFetch(overrides: { list?: unknown; rates?: unknown } = {}) {
   return { urls, fetchImpl: fetchImpl as unknown as typeof fetch };
 }
 
-/** A fake clock whose sleep advances time, so throttle gaps are observable without waiting. */
+/**
+ * A fake clock that behaves like timers: each sleep ends at its own target time (now + ms when called), and
+ * time only moves forward. Concurrent sleeps therefore overlap as real ones do, without waiting.
+ */
 function fakeClock() {
   let t = Date.parse("2026-10-05T10:00:00Z");
   const sleeps: number[] = [];
@@ -48,7 +51,9 @@ function fakeClock() {
     now: () => t,
     sleep: async (ms: number) => {
       sleeps.push(ms);
-      t += ms;
+      const target = t + ms;
+      await Promise.resolve();
+      t = Math.max(t, target);
     },
     advance: (ms: number) => (t += ms),
     sleeps,
@@ -238,23 +243,23 @@ describe("xotelo provider", () => {
     expect(urls).toHaveLength(0);
   });
 
-  it("spaces requests to data.xotelo.com at least 1.2 s apart", async () => {
+  it("spaces requests to data.xotelo.com at least minIntervalMs apart, even when made concurrently", async () => {
+    // Real timers with a short interval: concurrent waits overlap exactly as in production.
     const m = mockFetch();
-    const clock = fakeClock();
     const starts: number[] = [];
     const fetchImpl = (async (input: string | URL | Request) => {
-      starts.push(clock.now());
+      starts.push(Date.now());
       return (m.fetchImpl as (i: unknown) => Promise<Response>)(input);
     }) as typeof fetch;
     const xotelo = createXotelo({
       http: { userAgent: "test", fetchImpl, retries: 0 },
       keys: KEYS,
-      now: clock.now,
-      sleep: clock.sleep,
+      minIntervalMs: 40,
     });
-    await xotelo.search({ ...query, radius_km: 10 }); // 1 list + 3 rates
+    await xotelo.search({ ...query, radius_km: 10 }); // 1 list + 3 rates (the rates run concurrently)
     expect(starts).toHaveLength(4);
-    for (let i = 1; i < starts.length; i++) expect(starts[i]! - starts[i - 1]!).toBeGreaterThanOrEqual(1200);
+    // Timers may fire a little early.
+    for (let i = 1; i < starts.length; i++) expect(starts[i]! - starts[i - 1]!).toBeGreaterThanOrEqual(35);
   });
 
   it("caches /list for 7 days and /rates for 3 hours (empty rates for 1 hour)", async () => {
@@ -292,5 +297,53 @@ describe("xotelo occupancy", () => {
     expect(calls[0]!.get("adults")).toBe("4");
     expect(calls[0]!.has("age_of_children")).toBe(false);
     expect(calls[1]!.get("adults")).toBe("2");
+  });
+});
+
+describe("xotelo under load", () => {
+  it("refuses a request whose turn is further away than maxQueueWaitMs, instead of queueing", async () => {
+    const m = mockFetch();
+    const clock = fakeClock();
+    const xotelo = createXotelo({
+      http: { userAgent: "test", fetchImpl: m.fetchImpl, retries: 0 },
+      keys: KEYS,
+      now: clock.now,
+      sleep: clock.sleep,
+      maxQueueWaitMs: 2500,
+    });
+    // Four different hotels at once: slots at +0, +1.2, +2.4 s fit; +3.6 s does not.
+    const results = await Promise.allSettled(
+      ["g1-d1", "g1-d2", "g1-d3", "g1-d4"].map((k) => xotelo.rates(k, "2026-11-10", "2026-11-11")),
+    );
+    expect(results.map((r) => r.status)).toEqual(["fulfilled", "fulfilled", "fulfilled", "rejected"]);
+    expect((results[3] as PromiseRejectedResult).reason).toMatchObject({
+      code: "RATE_LIMITED",
+      message: expect.stringMatching(/busy/),
+    });
+    expect(m.urls.filter((u) => u.includes("/api/rates"))).toHaveLength(3);
+  });
+
+  it("shares one request between concurrent callers asking for the same rates", async () => {
+    const { xotelo, urls } = make();
+    await Promise.all([1, 2, 3].map(() => xotelo.rates("g1-d2", "2026-11-10", "2026-11-11")));
+    expect(urls.filter((u) => u.includes("/api/rates"))).toHaveLength(1);
+  });
+});
+
+describe("xotelo search budget", () => {
+  it("skips rates whose turn comes after the search budget and returns the hotels priced in time", async () => {
+    const m = mockFetch();
+    const clock = fakeClock();
+    const xotelo = createXotelo({
+      http: { userAgent: "test", fetchImpl: m.fetchImpl, retries: 0 },
+      keys: KEYS,
+      now: clock.now,
+      sleep: clock.sleep,
+      searchBudgetMs: 2000, // list at +0 s, first rates at +1.2 s; +2.4 s and +3.6 s are too late
+    });
+    const hotels = await xotelo.search({ ...query, radius_km: 10 });
+    expect(m.urls.filter((u) => u.includes("/api/rates"))).toHaveLength(1);
+    expect(hotels.length).toBeGreaterThan(1);
+    expect(hotels.filter((h) => h.prices.length > 0)).toHaveLength(1);
   });
 });

@@ -90,7 +90,16 @@ export function createDeps(config: Config, opts: { dataDir?: string } = {}): Dep
   );
   // Inside searches Xotelo scans one list page per area and prices the 5 nearest hotels (each request is
   // ~1.2 s apart); get_hotel_rates fetches full per-site prices for any single hotel.
-  const xotelo = createXotelo({ http, keys: loadXoteloKeys(dir), maxPagesPerKey: 1, ratesForNearest: 5 });
+  const xotelo = createXotelo({
+    http,
+    keys: loadXoteloKeys(dir),
+    maxPagesPerKey: 1,
+    ratesForNearest: 5,
+    // Leave half the per-source deadline for the request itself (Xotelo answers in ~3–7 s).
+    maxQueueWaitMs: config.PROVIDER_DEADLINE_MS / 2,
+    // A search's requests must start early enough to finish (~6 s each) before its deadline.
+    searchBudgetMs: Math.max(2_000, config.PROVIDER_DEADLINE_MS - 6_000),
+  });
   const serpapi = config.SERPAPI_KEY ? createSerpApi({ apiKey: config.SERPAPI_KEY, http }) : null;
   // Priced sources first: when listings merge, the first source's id becomes the hotel_id.
   const hotelProviders: HotelSearchProvider[] = [

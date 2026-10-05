@@ -17,6 +17,7 @@ Planned as 0.2.0.
 ### Changed
 
 - **"Hotels in X" searches the town.** A place query that names a town or city exactly (e.g. `Jaipur`) resolves to the town rather than to its main station, and Google Hotels is asked for "hotels in Jaipur, Rajasthan".
+- **Xotelo under load.** Requests are still spaced 1.2 s apart for everyone sharing the server, but one whose turn is too far away is skipped at once (`RATE_LIMITED`, "Xotelo is busy") instead of queueing until the caller's deadline, and a search returns the hotels Xotelo priced in time. Concurrent identical requests share one call. With five agents at once this removed Xotelo timeouts; Xotelo simply contributes fewer prices when many cold searches run together.
 - **Faster Xotelo.** Its area lists are fetched concurrently (still rate-limited), roughly halving its time on a first search.
 
 ## [0.1.1] - 2026-10-05

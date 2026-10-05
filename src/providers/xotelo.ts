@@ -154,7 +154,25 @@ export interface XoteloOptions {
   maxPagesPerKey?: number;
   /** How many of the nearest hotels get a `/rates` call. */
   ratesForNearest?: number;
+  /**
+   * Longest a request may wait for its turn. Requests are spaced `minIntervalMs` apart for everyone sharing
+   * this server; one that would start later than this is refused at once (RATE_LIMITED) instead of queueing
+   * until the caller's deadline expires.
+   */
+  maxQueueWaitMs?: number;
+  /**
+   * Within one search, requests must start within this long of the search starting, so they can finish
+   * before the caller's deadline; later ones (e.g. the last hotels' rates) are skipped and the hotels
+   * already priced are returned.
+   */
+  searchBudgetMs?: number;
   baseUrl?: string;
+}
+
+interface InFlight<T> {
+  promise: Promise<T>;
+  /** The start budget the request was made under. */
+  latestStart: number;
 }
 
 export function createXotelo(opts: XoteloOptions) {
@@ -165,40 +183,83 @@ export function createXotelo(opts: XoteloOptions) {
     minIntervalMs = 1200,
     maxPagesPerKey = 3,
     ratesForNearest = 10,
+    maxQueueWaitMs = 10_000,
+    searchBudgetMs = 14_000,
     baseUrl = XOTELO_BASE_URL,
   } = opts;
   const http: HttpOptions = { ...opts.http, timeoutMs: opts.http.timeoutMs ?? TIMEOUT_MS };
   const listCache = new TtlCache<XoteloListPage>(2_000, now);
   const ratesCache = new TtlCache<RateRow[]>(5_000, now);
   let nextSlot = 0;
-  let queue: Promise<void> = Promise.resolve();
+  const inflightRates = new Map<string, InFlight<RateRow[]>>();
+  const inflightLists = new Map<string, InFlight<XoteloListPage>>();
 
-  /** Serialises request starts to data.xotelo.com so they are at least `minIntervalMs` apart. */
-  function throttle(): Promise<void> {
-    const turn = queue.then(async () => {
-      const wait = nextSlot - now();
-      if (wait > 0) await sleep(wait);
-      nextSlot = now() + minIntervalMs;
+  /**
+   * Shares a request between concurrent callers, but a caller joins only a request at least as lenient as
+   * its own start budget: a strict caller's refused request must not fail a lenient one.
+   */
+  function shared<T>(
+    inflight: Map<string, InFlight<T>>,
+    key: string,
+    latestStart: number,
+    make: () => Promise<T>,
+  ): Promise<T> {
+    const existing = inflight.get(key);
+    if (existing && existing.latestStart >= latestStart) return existing.promise;
+    const promise = make().finally(() => {
+      if (inflight.get(key)?.promise === promise) inflight.delete(key);
     });
-    queue = turn.catch(() => undefined);
-    return turn;
+    inflight.set(key, { promise, latestStart });
+    return promise;
   }
 
-  async function call(path: string, params: Record<string, string | number>): Promise<unknown> {
+  /**
+   * Books the next start time, at least `minIntervalMs` after the previous one, and waits for it. Booking is
+   * synchronous, so concurrent callers get distinct, ordered slots. A slot further away than
+   * `maxQueueWaitMs` is refused rather than waited for.
+   */
+  async function throttle(latestStart = Infinity): Promise<void> {
+    const start = Math.max(now(), nextSlot);
+    const wait = start - now();
+    if (wait > maxQueueWaitMs || start > latestStart) {
+      throw new AppError(
+        "RATE_LIMITED",
+        `Xotelo is busy (next request slot in ${Math.ceil(wait / 1000)} s); skipped to stay within time`,
+        "Other sources are unaffected; Xotelo prices are available again once fewer searches run at once.",
+      );
+    }
+    nextSlot = start + minIntervalMs;
+    if (wait > 0) await sleep(wait);
+  }
+
+  async function call(
+    path: string,
+    params: Record<string, string | number>,
+    latestStart = Infinity,
+  ): Promise<unknown> {
     const url = new URL(`${baseUrl.replace(/\/$/, "")}/${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-    await throttle();
+    await throttle(latestStart);
     return getJson(url.toString(), http);
   }
 
-  async function listPage(key: string, offset: number): Promise<XoteloListPage> {
-    return listCache.getOrSet(`${key}:${offset}`, LIST_TTL_MS, async () => {
-      const raw = await call("list", { location_key: key, limit: PAGE_SIZE, offset, sort: "best_value" });
+  async function listPage(key: string, offset: number, latestStart = Infinity): Promise<XoteloListPage> {
+    const cacheKey = `${key}:${offset}`;
+    const hit = listCache.get(cacheKey);
+    if (hit) return hit;
+    return shared(inflightLists, cacheKey, latestStart, async () => {
+      const raw = await call(
+        "list",
+        { location_key: key, limit: PAGE_SIZE, offset, sort: "best_value" },
+        latestStart,
+      );
       const payload = parseUpstream("xotelo", ListPayload, raw);
       if (payload.error) throw xoteloError(payload.error);
       if (!payload.result)
         throw new AppError("SCHEMA_CHANGED", "Xotelo /list returned no result and no error");
-      return { total_count: payload.result.total_count, list: payload.result.list };
+      const page = { total_count: payload.result.total_count, list: payload.result.list };
+      listCache.set(cacheKey, page, LIST_TTL_MS);
+      return page;
     });
   }
 
@@ -215,6 +276,7 @@ export function createXotelo(opts: XoteloOptions) {
     checkOut: string,
     adults: number,
     childrenAges: readonly number[] = [],
+    latestStart = Infinity,
   ): Promise<RateRow[]> {
     // Xotelo returns no rates at all when age_of_children is sent (checked live 2026-10-05), so children are
     // priced as extra adults: the room still has to fit everyone, and the price errs high, never low.
@@ -222,14 +284,32 @@ export function createXotelo(opts: XoteloOptions) {
     const cacheKey = `${hotelKey}:${checkIn}:${checkOut}:${guests}`;
     const hit = ratesCache.get(cacheKey);
     if (hit) return hit;
-    const raw = await call("rates", {
-      hotel_key: hotelKey,
-      chk_in: checkIn,
-      chk_out: checkOut,
-      adults: guests,
-      rooms: 1,
-      currency: "INR",
-    });
+    // Concurrent callers asking for the same rates share one request.
+    return shared(inflightRates, cacheKey, latestStart, () =>
+      requestRates(hotelKey, checkIn, checkOut, guests, cacheKey, latestStart),
+    );
+  }
+
+  async function requestRates(
+    hotelKey: string,
+    checkIn: string,
+    checkOut: string,
+    guests: number,
+    cacheKey: string,
+    latestStart: number,
+  ): Promise<RateRow[]> {
+    const raw = await call(
+      "rates",
+      {
+        hotel_key: hotelKey,
+        chk_in: checkIn,
+        chk_out: checkOut,
+        adults: guests,
+        rooms: 1,
+        currency: "INR",
+      },
+      latestStart,
+    );
     const payload = parseUpstream("xotelo", RatesPayload, raw);
     if (payload.error) throw xoteloError(payload.error);
     if (!payload.result)
@@ -278,6 +358,7 @@ export function createXotelo(opts: XoteloOptions) {
   async function search(q: HotelSearchQuery): Promise<HotelCandidate[]> {
     const chosen = pickXoteloKeys(keys, q, q.radius_km);
     if (chosen.length === 0) return [];
+    const latestStart = now() + searchBudgetMs;
 
     // Collect hotels within the radius from each key's first pages, deduped by TripAdvisor hotel id.
     const byId = new Map<string, { item: XoteloListItem; hotelKey: string; km: number }>();
@@ -289,7 +370,7 @@ export function createXotelo(opts: XoteloOptions) {
         const items: XoteloListItem[] = [];
         try {
           for (let page = 0; page < maxPagesPerKey; page++) {
-            const res = await listPage(k.key, page * PAGE_SIZE);
+            const res = await listPage(k.key, page * PAGE_SIZE, latestStart);
             items.push(...res.list);
             if (res.list.length < PAGE_SIZE || (page + 1) * PAGE_SIZE >= res.total_count) break;
           }
@@ -316,7 +397,9 @@ export function createXotelo(opts: XoteloOptions) {
     const hotels = [...byId.values()].sort((a, b) => a.km - b.km);
     const priced = hotels.slice(0, ratesForNearest);
     const rateResults = await Promise.allSettled(
-      priced.map((h) => fetchRates(h.hotelKey, q.check_in, q.check_out, q.adults, q.children_ages)),
+      priced.map((h) =>
+        fetchRates(h.hotelKey, q.check_in, q.check_out, q.adults, q.children_ages, latestStart),
+      ),
     );
     const failed = rateResults.filter((r) => r.status === "rejected");
     if (priced.length > 0 && failed.length === priced.length)
