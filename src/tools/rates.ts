@@ -135,16 +135,40 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       const target = known ?? { hotel_id: "", also_ids: [], name: a.name!, lat: a.lat!, lng: a.lng! };
       const targetIds = new Set([target.hotel_id, ...target.also_ids].filter(Boolean));
 
+      const partyQ = {
+        check_in: a.check_in,
+        check_out: a.check_out,
+        adults: a.adults,
+        children_ages: a.children_ages,
+      };
+      // Everything that only needs the hotel's known ids starts now, alongside the re-search, so a check
+      // costs about one source's response time instead of several in a row.
+      const startIds = [target.hotel_id, ...target.also_ids].filter(Boolean);
+      const tvId = startIds.find((id) => id.startsWith("trivago:"));
+      const xoId = startIds.find((id) => id.startsWith("xotelo:"));
+      const wantsBaseline = a.check_single_room && guests > 2 && guests <= VERDICT_MAX_GUESTS;
+      // Party lookups start early only for sources the earlier search had no price from (the re-search
+      // usually returns the others); otherwise they run afterwards, and only if needed.
+      const hadPrice = (src: string) => remembered?.hotel.prices.some((p) => p.source === src) ?? false;
+      const tvParty =
+        tvId && !hadPrice("trivago") ? settle(trivagoQuotes(deps, tvId, target.name, partyQ)) : undefined;
+      const xoParty = xoId && !hadPrice("xotelo") ? settle(xoteloQuotes(deps, xoId, partyQ)) : undefined;
+      const tvBase =
+        wantsBaseline && tvId
+          ? settle(trivagoQuotes(deps, tvId, target.name, { ...partyQ, adults: 2, children_ages: [] }))
+          : undefined;
+      const xoBase =
+        wantsBaseline && xoId
+          ? settle(xoteloQuotes(deps, xoId, { ...partyQ, adults: 2, children_ages: [] }))
+          : undefined;
+
       const r = await searchHotels(
         deps.hotels,
         {
           lat: target.lat,
           lng: target.lng,
           radius_km: LOOKUP_RADIUS_KM,
-          check_in: a.check_in,
-          check_out: a.check_out,
-          adults: a.adults,
-          children_ages: a.children_ages,
+          ...partyQ,
           // Text-only sources look the hotel up by name, with the nearest station for city context.
           hotel_name: target.name,
           place: deps.gazetteer.nearby(target).stations[0]?.name,
@@ -194,55 +218,31 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       const withIds: RankedHotel = { ...match, also_ids: [...new Set([...match.also_ids, ...knownIds])] };
       const prices: PriceQuote[] = [...match.prices];
       const sources_failed = [...r.sources_failed];
-      // trivago's area search can leave a hotel out; look it up by name for this party instead.
-      // Also when falling back to the search's prices: a live trivago price beats a remembered one.
-      if (fromSearch || !prices.some((p) => p.source === "trivago")) {
-        try {
-          const live = await trivagoByName(deps, withIds, {
-            check_in: a.check_in,
-            check_out: a.check_out,
-            adults: a.adults,
-            children_ages: a.children_ages,
-          });
-          if (live.length) {
-            for (let i = prices.length - 1; i >= 0; i--)
-              if (prices[i]!.source === "trivago") prices.splice(i, 1);
-            prices.push(...live);
-          }
-        } catch (err) {
-          const e = toAppError(err);
-          sources_failed.push({ source: deps.trivago.info.id, code: e.code, message: e.message });
-        }
-      }
-      // Xotelo prices only the nearest hotels during a search; fetch this one's per-site prices directly.
-      const xoteloId = [withIds.hotel_id, ...withIds.also_ids].find((id) => id.startsWith("xotelo:"));
-      if (xoteloId && !prices.some((p) => p.source === "xotelo")) {
-        try {
-          const quotes = await deps.hotels.registry.run(deps.xotelo.info.id, () =>
-            deps.xotelo.rates(
-              xoteloId.slice("xotelo:".length),
-              a.check_in,
-              a.check_out,
-              a.adults,
-              a.children_ages,
-            ),
-          );
-          const fx = quotes.some((q) => q.currency !== "INR") ? await deps.hotels.fx.rates() : null;
-          for (const q of quotes) {
-            const priced = {
-              ...q,
-              per_night_inr:
-                q.currency === "INR"
-                  ? Math.round(q.per_night)
-                  : fx
-                    ? convertToInr(q.per_night, q.currency, fx)
-                    : null,
-            };
-            prices.push({ ...priced, ...occupancyLabel(priced, guests) });
-          }
-        } catch (err) {
-          const e = toAppError(err);
-          sources_failed.push({ source: deps.xotelo.info.id, code: e.code, message: e.message });
+      // Fill in trivago and Xotelo from their direct lookups when the re-search lacks them; when falling back
+      // to the search's prices, a live price beats a remembered one.
+      for (const [source, started] of [
+        ["trivago", tvParty],
+        ["xotelo", xoParty],
+      ] as const) {
+        if (!fromSearch && prices.some((p) => p.source === source)) continue;
+        // An id first seen in this re-search (hotel given by name and coordinates) is looked up now.
+        const id = [withIds.hotel_id, ...withIds.also_ids].find((x) => x.startsWith(`${source}:`));
+        const pending =
+          started ??
+          (id
+            ? settle(
+                source === "trivago"
+                  ? trivagoQuotes(deps, id, withIds.name, partyQ)
+                  : xoteloQuotes(deps, id, partyQ),
+              )
+            : undefined);
+        if (!pending) continue;
+        const res = await pending;
+        if ("error" in res) {
+          sources_failed.push({ source, code: res.error.code, message: res.error.message });
+        } else if (res.value.length) {
+          for (let i = prices.length - 1; i >= 0; i--) if (prices[i]!.source === source) prices.splice(i, 1);
+          prices.push(...res.value);
         }
       }
 
@@ -259,13 +259,28 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       const unverified = prices.filter((p) => p.occupancy === "unverified");
       if (a.check_single_room && unverified.length > 0) {
         try {
-          const { prices: baseline, failures } = await twoAdultPrices(
-            deps,
-            withIds,
-            a.check_in,
-            a.check_out,
-            new Set(unverified.map((p) => p.source)),
-          );
+          const baseline = new Map<string, number>();
+          const failures: SourceFailure[] = [];
+          for (const [source, pending] of [
+            ["trivago", tvBase],
+            ["xotelo", xoBase],
+          ] as const) {
+            if (!pending) continue;
+            const res = await pending;
+            if ("error" in res) failures.push({ source, code: res.error.code, message: res.error.message });
+            else
+              for (const q of res.value)
+                if (q.per_night_inr !== null) baseline.set(baselineKey(source, q.seller), q.per_night_inr);
+          }
+          // Only sources whose id wasn't known up front (rare) get a 2-adult re-search near the hotel; a
+          // preloaded lookup that failed or found nothing is final (no second, slower attempt).
+          const preloaded = new Set([...(tvBase ? ["trivago"] : []), ...(xoBase ? ["xotelo"] : [])]);
+          const missing = new Set(unverified.map((p) => p.source).filter((src) => !preloaded.has(src)));
+          if (missing.size) {
+            const more = await twoAdultPrices(deps, withIds, a.check_in, a.check_out, missing);
+            for (const [k, v] of more.prices) baseline.set(k, v);
+            failures.push(...more.failures);
+          }
           for (const p of unverified) {
             const base = baseline.get(baselineKey(p.source, p.seller)) ?? null;
             checks.set(p, {
@@ -394,7 +409,15 @@ async function twoAdultPrices(
   // trivago's area search can leave the hotel out; look it up by name. A failure keeps the other baselines.
   if (sources.has("trivago") && !prices.has(baselineKey("trivago", null))) {
     try {
-      const live = await trivagoByName(deps, hotel, { check_in: checkIn, check_out: checkOut, adults: 2 });
+      const tvId = [hotel.hotel_id, ...hotel.also_ids].find((x) => x.startsWith("trivago:"));
+      const live = tvId
+        ? await trivagoQuotes(deps, tvId, hotel.name, {
+            check_in: checkIn,
+            check_out: checkOut,
+            adults: 2,
+            children_ages: [],
+          })
+        : [];
       for (const p of live)
         if (p.per_night_inr !== null) prices.set(baselineKey("trivago", p.seller), p.per_night_inr);
     } catch (err) {
@@ -428,34 +451,48 @@ async function twoAdultPrices(
   return { prices, failures };
 }
 
-/** trivago's prices for one hotel looked up by name, for a given stay and party; [] when trivago doesn't list it. */
-async function trivagoByName(
-  deps: RatesToolDeps,
-  hotel: RankedHotel,
-  q: { check_in: string; check_out: string; adults: number; children_ages?: number[] },
-): Promise<PriceQuote[]> {
-  const id = [hotel.hotel_id, ...hotel.also_ids].find((x) => x.startsWith("trivago:"));
-  if (!id || !deps.hotels.registry.isEnabled(deps.trivago.info.id)) return [];
+type Settled<T> = { value: T } | { error: AppError };
+
+/** Resolves to a value or the normalised error, so parallel lookups can be awaited in any order. */
+function settle<T>(p: Promise<T>): Promise<Settled<T>> {
+  return p.then(
+    (value) => ({ value }),
+    (err: unknown) => ({ error: toAppError(err) }),
+  );
+}
+
+type Stay = { check_in: string; check_out: string; adults: number; children_ages: number[] };
+
+/** trivago's prices for one hotel looked up by name and id-checked, labelled for the party; [] if not listed. */
+async function trivagoQuotes(deps: RatesToolDeps, id: string, name: string, q: Stay): Promise<PriceQuote[]> {
+  if (!deps.hotels.registry.isEnabled(deps.trivago.info.id)) return [];
   const found = await deps.hotels.registry.run(
     deps.trivago.info.id,
-    () => deps.trivago.lookup(id.slice("trivago:".length), hotel.name, undefined, q),
+    () => deps.trivago.lookup(id.slice("trivago:".length), name, undefined, q),
     deps.hotels.deadlineMs,
   );
-  const guests = q.adults + (q.children_ages?.length ?? 0);
-  // trivago normally quotes INR (currency=INR); convert anything else rather than dropping it.
-  const fx = found?.prices.some((p) => p.currency !== "INR")
-    ? await deps.hotels.fx.rates().catch(() => null)
-    : null;
-  return (found?.prices ?? []).map((p) => {
-    const priced = {
-      ...p,
-      per_night_inr:
-        p.currency === "INR"
-          ? Math.round(p.per_night)
-          : fx
-            ? convertToInr(p.per_night, p.currency, fx)
-            : null,
-    };
+  return labelled(deps, found?.prices ?? [], q);
+}
+
+/** Xotelo's per-site prices for one hotel by its key, labelled for the party; [] if disabled. */
+async function xoteloQuotes(deps: RatesToolDeps, id: string, q: Stay): Promise<PriceQuote[]> {
+  if (!deps.hotels.registry.isEnabled(deps.xotelo.info.id)) return [];
+  const quotes = await deps.hotels.registry.run(
+    deps.xotelo.info.id,
+    () => deps.xotelo.rates(id.slice("xotelo:".length), q.check_in, q.check_out, q.adults, q.children_ages),
+    deps.hotels.deadlineMs,
+  );
+  return labelled(deps, quotes, q);
+}
+
+/** INR conversion (non-INR converted, not dropped) and occupancy labels for directly fetched quotes. */
+async function labelled(deps: RatesToolDeps, quotes: PriceQuote[], q: Stay): Promise<PriceQuote[]> {
+  const guests = q.adults + q.children_ages.length;
+  const fx = quotes.some((p) => p.currency !== "INR") ? await deps.hotels.fx.rates().catch(() => null) : null;
+  return quotes.map((p) => {
+    const inr =
+      p.currency === "INR" ? Math.round(p.per_night) : fx ? convertToInr(p.per_night, p.currency, fx) : null;
+    const priced = { ...p, per_night_inr: inr };
     return { ...priced, ...occupancyLabel(priced, guests) };
   });
 }

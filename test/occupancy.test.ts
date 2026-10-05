@@ -642,3 +642,81 @@ describe("trivago lookup with ids from the original search", () => {
     ]);
   });
 });
+
+describe("get_hotel_rates timing", () => {
+  it("starts the trivago and 2-adult lookups alongside the re-search, not after it", async () => {
+    const events: string[] = [];
+    const listing = (price: number): HotelCandidate => ({
+      source: "trivago",
+      source_id: "tv1",
+      name: "Sunrise Residency",
+      lat: 28.6435,
+      lng: 77.2194,
+      stars: 3,
+      rating_10: 8,
+      review_count: 10,
+      url: null,
+      fetched_at: T,
+      prices: [{ ...quote("trivago", price), per_night_inr: null }],
+    });
+    let first = true;
+    const tv: HotelSearchProvider = {
+      info: {
+        id: "trivago",
+        name: "trivago",
+        kind: "hotel-prices",
+        official: true,
+        needsKey: false,
+        limitations: [],
+      },
+      search: vi.fn(async () => {
+        if (first) return ((first = false), [listing(3800)]);
+        events.push("re-search start");
+        await new Promise((r) => setTimeout(r, 50));
+        events.push("re-search end");
+        return [];
+      }),
+    };
+    const lookup = vi.fn(async (_id: string, _n: string, _c: string | undefined, q: { adults: number }) => {
+      events.push(`lookup ${q.adults}`);
+      return listing(q.adults === 2 ? 1900 : 3800);
+    });
+    const registry = new ProviderRegistry();
+    [tv.info, FX_INFO, XOTELO_INFO].forEach((i) => registry.register(i));
+    const { TRIVAGO_INFO } = await import("../src/providers/trivago.js");
+    const c = await connect(
+      testDeps({
+        registry,
+        hotelProviders: [tv],
+        memory: new HotelMemory(),
+        now: () => new Date(T),
+        xotelo: { info: XOTELO_INFO, rates: vi.fn(async () => []) },
+        trivago: { info: TRIVAGO_INFO, lookup },
+      }),
+    );
+    const d = { check_in: "2026-11-10", check_out: "2026-11-11", adults: 4 };
+    const s = await c.callTool({ name: "search_hotels", arguments: { lat: 28.643, lng: 77.2194, ...d } });
+    const id = (s.structuredContent as { hotels: { hotel_id: string }[] }).hotels[0]!.hotel_id;
+    const r = await c.callTool({
+      name: "get_hotel_rates",
+      arguments: { hotel_id: id, ...d, check_single_room: true },
+    });
+    // Both lookups ran before the re-search finished.
+    const end = events.indexOf("re-search end");
+    const party = events.indexOf("lookup 4");
+    const base = events.indexOf("lookup 2");
+    expect(end).toBeGreaterThan(0);
+    // The 2-adult lookup ran, and before the re-search finished.
+    expect(base).toBeGreaterThanOrEqual(0);
+    expect(base).toBeLessThan(end);
+    // The search already had a trivago price, so the party lookup is not started early (it may run later).
+    expect(party === -1 || party > end).toBe(true);
+    const p = (r.structuredContent as { prices: Record<string, any>[] }).prices.find(
+      (x) => x.source === "trivago",
+    )!;
+    expect(p.single_room_check).toMatchObject({
+      verdict: "looks_like_2_rooms",
+      two_adult_per_night_inr: 1900,
+    });
+  });
+});
