@@ -27,6 +27,8 @@ const PriceOut = z.object({
   refundable: z.boolean().nullable(),
   url: z.string().nullable(),
   room: z.string().nullable(),
+  occupancy: z.enum(["confirmed", "likely", "unverified"]),
+  occupancy_note: z.string().nullable(),
   fetched_at: z.string(),
 });
 
@@ -41,6 +43,7 @@ const HotelOut = z.object({
   rating_10: z.number().nullable(),
   review_count: z.number().nullable(),
   cheapest: PriceOut.nullable(),
+  cheapest_single_room: PriceOut.nullable(),
   price_count: z.number(),
   sources: z.array(z.string()),
 });
@@ -73,6 +76,8 @@ const priceOut = (p: PriceQuote): z.infer<typeof PriceOut> => ({
   refundable: p.refundable,
   url: p.url,
   room: p.room,
+  occupancy: p.occupancy ?? "likely",
+  occupancy_note: p.occupancy_note ?? null,
   fetched_at: p.fetched_at,
 });
 
@@ -87,6 +92,9 @@ const hotelOut = (h: RankedHotel): z.infer<typeof HotelOut> => ({
   rating_10: h.rating_10,
   review_count: h.review_count,
   cheapest: h.cheapest ? priceOut(h.cheapest) : null,
+  // Only when it differs: the cheapest price is unverified as one room for the party.
+  cheapest_single_room:
+    h.cheapest_single_room && h.cheapest_single_room !== h.cheapest ? priceOut(h.cheapest_single_room) : null,
   price_count: h.prices.length,
   sources: h.sources,
 });
@@ -110,7 +118,9 @@ export function registerHotelTools(server: McpServer, deps: HotelToolDeps): void
         "sources merged per hotel. The place is one of: lat+lng, an Indian Railways station code, an airport " +
         "IATA code, or a place name. Returns each hotel's id, coordinates, straight-line distance, stars, " +
         "guest rating and cheapest current price in INR (with original currency, seller, source and, where the " +
-        "source names it, the room type). Every search is for one room that fits the party. With " +
+        "source names it, the room type). Every search is for one room that fits the party; each price says " +
+        "how far that is established (occupancy: confirmed, likely or unverified), and when the cheapest " +
+        "price is unverified, cheapest_single_room gives the cheapest that is not. With " +
         "max_drive_minutes, keeps only hotels within that drive time (OpenStreetMap routing with a traffic " +
         "allowance) and adds drive_minutes. Results are paginated. Per-seller prices are in get_hotel_rates; " +
         "times to other places are in compare_hotels. Does not book.",

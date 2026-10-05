@@ -21,6 +21,9 @@ export interface PriceQuote {
   url: string | null;
   /** Room as the source names it (e.g. "Family Room with 2 Double Beds"), when the source says. */
   room: string | null;
+  /** How far this is known to be ONE room for the whole party (set when results are merged). */
+  occupancy?: "confirmed" | "likely" | "unverified";
+  occupancy_note?: string | null;
   fetched_at: string;
 }
 

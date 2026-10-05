@@ -9,6 +9,7 @@ import {
   type RetiringRooms,
   type RetiringRoomStation,
 } from "./retiring.js";
+import { effectivePrice } from "./occupancy.js";
 import { addDays, istClock, istDate, istIso } from "./time.js";
 import { travelMatrix, type TravelDeps } from "./travel.js";
 
@@ -42,6 +43,10 @@ export interface StayCandidate {
   rating_10: number | null;
   per_night_inr: number | null;
   seller: string | null;
+  /** How far per_night_inr is known to be one room for the party (see search_hotels). */
+  occupancy: "confirmed" | "likely" | "unverified" | null;
+  /** A cheaper price that is unverified as one room (possibly two rooms), when there is one. */
+  cheaper_unverified_per_night_inr: number | null;
   minutes_from_arrival: number | null;
   minutes_to_departure: number | null;
   /** Latest time to leave the hotel to make the departure with the buffer. */
@@ -186,7 +191,8 @@ export async function planStay(
   // Route a shortlist rather than every hotel: the cheapest, plus the nearest to the arrival and to the
   // departure point, so a slightly dearer hotel next to the station still gets scored on time + price.
   const all = [...found.values()];
-  const byPrice = [...all].sort((a, b) => a.cheapest!.per_night_inr! - b.cheapest!.per_night_inr!);
+  const priceOf = (h: RankedHotel) => effectivePrice(h)!.per_night_inr!;
+  const byPrice = [...all].sort((a, b) => priceOf(a) - priceOf(b));
   const nearest = (p: StayRequest["arrive"]) =>
     [...all].sort((a, b) => haversineKm(p, a) - haversineKm(p, b));
   const pool = [
@@ -219,10 +225,7 @@ export async function planStay(
         const score =
           inMin === null || outMin === null
             ? null
-            : Math.round(
-                h.cheapest!.per_night_inr! * nights +
-                  ((inMin + outMin) / 60) * opts.value_of_time_inr_per_hour,
-              );
+            : Math.round(priceOf(h) * nights + ((inMin + outMin) / 60) * opts.value_of_time_inr_per_hour);
         return toCandidate(h, inMin, outMin, leaveBy, score);
       });
     } catch (err) {
@@ -305,8 +308,11 @@ function toCandidate(
     lng: h.lng,
     stars: h.stars,
     rating_10: h.rating_10,
-    per_night_inr: h.cheapest?.per_night_inr ?? null,
-    seller: h.cheapest ? (h.cheapest.seller ?? h.cheapest.source) : null,
+    per_night_inr: effectivePrice(h)?.per_night_inr ?? null,
+    occupancy: effectivePrice(h)?.occupancy ?? null,
+    cheaper_unverified_per_night_inr:
+      h.cheapest && h.cheapest !== effectivePrice(h) ? h.cheapest.per_night_inr : null,
+    seller: effectivePrice(h) ? (effectivePrice(h)!.seller ?? effectivePrice(h)!.source) : null,
     minutes_from_arrival: inMin,
     minutes_to_departure: outMin,
     leave_by: leaveBy,

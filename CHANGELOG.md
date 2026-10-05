@@ -4,12 +4,13 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-10-05
+Planned as 0.2.0.
 
 ### Added
 
 - **Families in one room.** `search_hotels`, `get_hotel_rates` and `plan_stays` take `children_ages` (up to 4 children, ages 0–17) besides `adults`, at most 8 guests. Every source is asked for one room for that party, so results are rooms that fit everyone. Xotelo returns no prices when children are sent, so it counts them as adults (its prices err high, never low); the response says so.
 - **Guest-rating floor:** `min_rating_pct` on `search_hotels` and `plan_stays` (e.g. 60 = 6.0/10), with a server default from `DEFAULT_MIN_RATING_PCT` (0 = off) that the agent can override per request. It applies to the merged guest rating after all sources answer (not at source, where a source would judge by its own rating and could drop its price for a hotel that passes); unrated hotels are left out while it is on, and counted in the notes.
+- **One-room confidence for every price.** Prices carry `occupancy` (`confirmed`, `likely` or `unverified`, with a note), and hotels carry `cheapest_single_room` when their cheapest price is unverified. Live checks found trivago and Xotelo sometimes price 3+ guests as two rooms under a one-room request, so those are `unverified` for larger parties. `get_hotel_rates` with `check_single_room: true` re-prices them for 2 adults and gives each a verdict (`plausible_single_room`, `looks_like_2_rooms`, `implausible`, `unknown`). `plan_stays` candidates and `compare_hotels` show the same labels.
 - **Room names:** prices carry the room as the source names it (`room`, from HotelsCasa), since no source can filter by bed type and "fits four adults" can mean a family room or a double with extra beds.
 - **Cheapest first at the source.** With `sort=price` (or `rating`), Google Hotels and HotelsCasa are asked for their cheapest (or best-rated) results, and minimum stars (and, for Google, the price cap) are applied server-side, so their single page of results is the right page. trivago gets the star filter.
 
@@ -53,7 +54,6 @@ The first public release.
 - **Bundled data:** OpenStreetMap snapshots of ~9.2k railway stations with codes, ~5.3k bus stations and ~24k lodging places (ODbL), 151 Indian airports from OurAirports (public domain), and IRCTC's public retiring-room station list (356 stations). Rebuilt with `npm run build:data`; the IRCTC list only with the manual `--with-irctc` flag.
 - **Packaging and checks:** Dockerfile and docker compose for local use, unit and MCP protocol tests on synthetic fixtures, and a live acceptance smoke test (`npm run smoke`).
 
-[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.1...v0.2.0
+[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/shubhamyadav8901/hotels-mcp/releases/tag/v0.1.0

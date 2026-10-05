@@ -121,6 +121,8 @@ export function registerStayTools(server: McpServer, deps: StayToolDeps): void {
                 rating_10: z.number().nullable(),
                 per_night_inr: z.number().nullable(),
                 seller: z.string().nullable(),
+                occupancy: z.enum(["confirmed", "likely", "unverified"]).nullable(),
+                cheaper_unverified_per_night_inr: z.number().nullable(),
                 minutes_from_arrival: z.number().nullable(),
                 minutes_to_departure: z.number().nullable(),
                 leave_by: z.string().nullable(),

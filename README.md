@@ -147,6 +147,17 @@ Guest-rating floor: `min_rating_pct` (e.g. 60 = 6.0/10 = 3.0/5). Its default com
 it per request ("at least 80%" → `80`, "include unrated hotels" → `0`). While it is on, hotels no source rates
 are left out, and the notes say how many.
 
+One room, really? Each price carries `occupancy`: `confirmed` (the source names a room that sleeps the party,
+e.g. a HotelsCasa "Family Room"), `likely` (the source searched for the party but names no room, e.g. Google), or
+`unverified`. Live checks found trivago and Xotelo sometimes quote **two rooms** (about exactly double the 2-adult
+price) for 3+ guests under a one-room request, so their prices for larger parties are `unverified`. When a
+hotel's cheapest price is unverified, `cheapest_single_room` gives its cheapest confirmed-or-likely price, and
+`get_hotel_rates` with `check_single_room: true` re-prices the unverified sources for 2 adults and gives each
+price a verdict: `plausible_single_room`, `looks_like_2_rooms` (≈2.00×), `implausible` (≥4×) or `unknown` (no
+2-adult price, or a party over 4, where three rooms would not show as doubling). Sorting by price, `max_price_inr`
+and `plan_stays` scoring use a hotel's cheapest single-room price when it has one. An agent can search broadly
+and check only its shortlist (each check takes one extra search of trivago and Xotelo, ~15–25 s).
+
 Beds: no source can filter by bed type. Where the source names the room (HotelsCasa), each price carries it in
 `room` (e.g. "Family Room", "Comfort Quadruple Room", or "Deluxe Double Room" with extra beds), so check it
 before booking for four adults.

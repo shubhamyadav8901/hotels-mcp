@@ -3,8 +3,14 @@ import { z } from "zod";
 import type { Gazetteer } from "../core/anchors.js";
 import { AppError, toAppError } from "../core/errors.js";
 import type { HotelMemory } from "../core/hotel-memory.js";
-import { searchHotels, type HotelSearchDeps, type RankedHotel } from "../core/hotel-search.js";
+import {
+  searchHotels,
+  type HotelSearchDeps,
+  type RankedHotel,
+  type SourceFailure,
+} from "../core/hotel-search.js";
 import { isSameHotel, nameSimilarity } from "../core/merge.js";
+import { occupancyLabel, singleRoomVerdict, VERDICT_MAX_GUESTS } from "../core/occupancy.js";
 import type { PriceQuote } from "../core/types.js";
 import { convertToInr } from "../providers/fx.js";
 import type { Xotelo } from "../providers/xotelo.js";
@@ -26,6 +32,16 @@ const QuoteOut = z.object({
   refundable: z.boolean().nullable(),
   url: z.string().nullable(),
   room: z.string().nullable(),
+  occupancy: z.enum(["confirmed", "likely", "unverified"]),
+  occupancy_note: z.string().nullable(),
+  single_room_check: z
+    .object({
+      verdict: z.enum(["plausible_single_room", "looks_like_2_rooms", "implausible", "unknown"]),
+      two_adult_per_night_inr: z.number().nullable(),
+      ratio: z.number().nullable(),
+    })
+    .nullable()
+    .describe("Present when check_single_room ran for this price."),
   fetched_at: z.string(),
 });
 
@@ -62,6 +78,13 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         check_in: isoDate.describe("Check-in date, YYYY-MM-DD (IST)."),
         check_out: isoDate.describe("Check-out date, YYYY-MM-DD."),
         ...occupancyFields,
+        check_single_room: z
+          .boolean()
+          .default(false)
+          .describe(
+            "For parties of 3+, re-price the sources whose prices are unverified as one room (trivago, Xotelo) " +
+              "for 2 adults and compare each seller's price: about exactly double suggests two rooms.",
+          ),
       },
       outputSchema: {
         hotel: z.object({
@@ -88,6 +111,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
     handle(async (a) => {
       validateDates(a.check_in, a.check_out, deps.now());
       validateOccupancy(a.adults, a.children_ages);
+      const guests = a.adults + a.children_ages.length;
       const known = a.hotel_id ? deps.memory.get(a.hotel_id)?.hotel : undefined;
       if (a.hotel_id && !known && (a.lat === undefined || a.lng === undefined || !a.name)) {
         throw new AppError(
@@ -153,7 +177,7 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           );
           const fx = quotes.some((q) => q.currency !== "INR") ? await deps.hotels.fx.rates() : null;
           for (const q of quotes) {
-            prices.push({
+            const priced = {
               ...q,
               per_night_inr:
                 q.currency === "INR"
@@ -161,11 +185,48 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
                   : fx
                     ? convertToInr(q.per_night, q.currency, fx)
                     : null,
-            });
+            };
+            prices.push({ ...priced, ...occupancyLabel(priced, guests) });
           }
         } catch (err) {
           const e = toAppError(err);
           sources_failed.push({ source: deps.xotelo.info.id, code: e.code, message: e.message });
+        }
+      }
+
+      const notes = [
+        occupancyNote(a.adults, a.children_ages),
+        "Meta-search prices can differ at checkout; includes_taxes=null means the source does not say whether GST is included.",
+      ];
+      const checks = new Map<PriceQuote, z.infer<typeof SingleRoomCheck>>();
+      const unverified = prices.filter((p) => p.occupancy === "unverified");
+      if (a.check_single_room && unverified.length > 0) {
+        try {
+          const { prices: baseline, failures } = await twoAdultPrices(
+            deps,
+            match,
+            a.check_in,
+            a.check_out,
+            new Set(unverified.map((p) => p.source)),
+          );
+          for (const p of unverified) {
+            const base = baseline.get(baselineKey(p.source, p.seller)) ?? null;
+            checks.set(p, {
+              verdict: singleRoomVerdict(p.per_night_inr, base, guests),
+              two_adult_per_night_inr: base,
+              ratio:
+                base && p.per_night_inr !== null ? Math.round((p.per_night_inr / base) * 100) / 100 : null,
+            });
+          }
+          for (const f of failures) sources_failed.push({ ...f, source: `single_room_check:${f.source}` });
+          notes.push(
+            guests > VERDICT_MAX_GUESTS
+              ? `single_room_check gives no verdict for ${guests} guests: three or more rooms would not show as doubling.`
+              : "single_room_check compares each unverified price with the same seller's 2-adult price for this hotel: about 2.00x suggests two rooms; 4x or more is not a believable single room; unknown means no 2-adult price to compare.",
+          );
+        } catch (err) {
+          const e = toAppError(err);
+          sources_failed.push({ source: "single_room_check", code: e.code, message: e.message });
         }
       }
 
@@ -182,6 +243,9 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
           refundable: p.refundable,
           url: p.url,
           room: p.room,
+          occupancy: p.occupancy ?? "likely",
+          occupancy_note: p.occupancy_note ?? null,
+          single_room_check: checks.get(p) ?? null,
           fetched_at: p.fetched_at,
         }))
         .sort((x, y) => (x.per_night_inr ?? Infinity) - (y.per_night_inr ?? Infinity));
@@ -193,10 +257,6 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
         adults: a.adults,
         children_ages: a.children_ages,
       });
-      const notes = [
-        occupancyNote(a.adults, a.children_ages),
-        "Meta-search prices can differ at checkout; includes_taxes=null means the source does not say whether GST is included.",
-      ];
       if (sorted.length === 0) notes.push("No source has a live price for this hotel on these dates.");
       return {
         hotel: {
@@ -220,4 +280,74 @@ export function registerRatesTool(server: McpServer, deps: RatesToolDeps): void 
       };
     }),
   );
+}
+
+const SingleRoomCheck = z.object({
+  verdict: z.enum(["plausible_single_room", "looks_like_2_rooms", "implausible", "unknown"]),
+  two_adult_per_night_inr: z.number().nullable(),
+  ratio: z.number().nullable(),
+});
+
+/**
+ * Prices are compared per seller where a source lists several (Xotelo), but per source where it shows
+ * only its cheapest advertiser (trivago), which can change with the party size.
+ */
+function baselineKey(source: string, seller: string | null): string {
+  return source === "trivago" ? "trivago|*" : `${source}|${seller ?? ""}`;
+}
+
+/** Each seller's 2-adult, one-room price for this hotel, from the given sources only ("source|seller" → INR). */
+async function twoAdultPrices(
+  deps: RatesToolDeps,
+  hotel: RankedHotel,
+  checkIn: string,
+  checkOut: string,
+  sources: Set<string>,
+): Promise<{ prices: Map<string, number>; failures: SourceFailure[] }> {
+  const ids = new Set([hotel.hotel_id, ...hotel.also_ids]);
+  const r = await searchHotels(
+    { ...deps.hotels, providers: deps.hotels.providers.filter((p) => sources.has(p.info.id)) },
+    {
+      lat: hotel.lat,
+      lng: hotel.lng,
+      radius_km: LOOKUP_RADIUS_KM,
+      check_in: checkIn,
+      check_out: checkOut,
+      adults: 2,
+    },
+    { sort: "distance", include_unpriced: true },
+  );
+  const failures = [...r.sources_failed];
+  const same =
+    r.hotels.find((h) => [h.hotel_id, ...h.also_ids].some((id) => ids.has(id))) ??
+    r.hotels.find((h) => isSameHotel(hotel, h));
+  const prices = new Map<string, number>();
+  // searchHotels has already converted these to INR.
+  for (const p of same?.prices ?? []) {
+    if (p.per_night_inr !== null) prices.set(baselineKey(p.source, p.seller), p.per_night_inr);
+  }
+  // Xotelo prices only the nearest hotels in a search; ask for this one directly if needed. A failure here
+  // keeps the other sources' baselines.
+  const xoteloId = [hotel.hotel_id, ...hotel.also_ids].find((id) => id.startsWith("xotelo:"));
+  if (sources.has("xotelo") && xoteloId && ![...prices.keys()].some((k) => k.startsWith("xotelo|"))) {
+    try {
+      const quotes = await deps.hotels.registry.run(deps.xotelo.info.id, () =>
+        deps.xotelo.rates(xoteloId.slice("xotelo:".length), checkIn, checkOut, 2),
+      );
+      const fx = quotes.some((q) => q.currency !== "INR") ? await deps.hotels.fx.rates() : null;
+      for (const q of quotes) {
+        const inr =
+          q.currency === "INR"
+            ? Math.round(q.per_night)
+            : fx
+              ? convertToInr(q.per_night, q.currency, fx)
+              : null;
+        if (inr !== null) prices.set(baselineKey("xotelo", q.seller), inr);
+      }
+    } catch (err) {
+      const e = toAppError(err);
+      failures.push({ source: deps.xotelo.info.id, code: e.code, message: e.message });
+    }
+  }
+  return { prices, failures };
 }
