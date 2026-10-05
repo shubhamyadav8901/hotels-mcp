@@ -4,7 +4,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
-Planned as 0.2.0.
+## [0.2.0] - 2026-10-05
 
 ### Added
 
@@ -23,6 +23,8 @@ Planned as 0.2.0.
 - **Full room list for the agent.** `get_hotel_rates` with `verify_room` also returns `room_list`: every room offer on Google's page for the hotel (site, room name, stated guests, price, link; up to 60), so an agent can judge rooms the fit rules don't recognise. No extra SerpApi searches.
 - **SerpApi quota guard.** The monthly search count is saved in `STATE_DIR` (a named volume under docker compose) so it survives restarts, and uncached room-list lookups are capped at `SERPAPI_ROOMS_PER_HOUR` (default 8; over the cap the lookup is reported as `RATE_LIMITED`).
 - **Faster first search after a start.** trivago and HotelsCasa sessions are opened in the background at start (their two-request handshake used to count against the first search's time budget), and a call that fails at the connection level is retried once.
+- **Duplicate hotels.** An identical name of two or more distinctive words now merges across sources up to 500 m apart (Google and trivago placed "Royal Casa Cochin" 280 m apart), and a source's own duplicate listing on the same spot with the same name is merged (HotelsCasa listed "Sidra Pristine Hotel and/& Portico Halls" twice, once one room and once two rooms).
+- **`get_hotel_rates` answers for the hotel asked about.** When the live re-check found it only under another source's listing (trivago's "ROYAL INN" as Google's "Treebo Trip Royal Inn"), the answer took that listing's name, id and thinner rating (7.5 from 633 reviews became 7.6 from 66, or none). It now keeps the asked-for id and name, the rating with more reviews, and notes the other listing's name.
 - **Slow networks.** Node gives each of a host's addresses only 250 ms to connect and drops the attempt when it moves on, so on a slow or NAT64 network (0.5–5 s connects seen from Docker) every source failed with ETIMEDOUT although reachable. Each attempt now gets 2.5 s.
 - **Google Hotels shape tolerance.** A price, site or room Google lists without a name is skipped instead of failing the whole response (seen live as SCHEMA_CHANGED for one hotel).
 - **Faster Xotelo.** Its area lists are fetched concurrently (still rate-limited), roughly halving its time on a first search.
@@ -62,6 +64,7 @@ The first public release.
 - **Bundled data:** OpenStreetMap snapshots of ~9.2k railway stations with codes, ~5.3k bus stations and ~24k lodging places (ODbL), 151 Indian airports from OurAirports (public domain), and IRCTC's public retiring-room station list (356 stations). Rebuilt with `npm run build:data`; the IRCTC list only with the manual `--with-irctc` flag.
 - **Packaging and checks:** Dockerfile and docker compose for local use, unit and MCP protocol tests on synthetic fixtures, and a live acceptance smoke test (`npm run smoke`).
 
-[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/shubhamyadav8901/hotels-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/shubhamyadav8901/hotels-mcp/releases/tag/v0.1.0
